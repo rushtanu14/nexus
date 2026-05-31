@@ -6,3 +6,5 @@ DerivedData/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 *.swiftpm/
+.nexus-data/
+node_modules/
