@@ -38,8 +38,13 @@ docs/
 ## Run From Terminal
 
 ```bash
-cd native-macos
-swift run LocalWorkflowStudioNative
+./run.sh
+```
+
+To build without launching the app:
+
+```bash
+./run.sh --no-open
 ```
 
 ## Build The App Bundle
