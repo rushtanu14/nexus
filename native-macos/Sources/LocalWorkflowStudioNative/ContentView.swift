@@ -475,7 +475,7 @@ private struct PromptPanel: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("ask AI to build a workflow")
                         .font(.system(size: 16, weight: .bold))
-                    Text("generated locally with Ollama.")
+                    Text("generated locally with Ollama")
                         .font(.system(size: 12))
                         .foregroundStyle(StudioPalette.muted)
                 }
@@ -494,7 +494,7 @@ private struct PromptPanel: View {
                         .padding(10)
 
                     if model.prompt.isEmpty {
-                        Text("describe the automation you want Nex to build.")
+                        Text("Describe the automation you want Nex to build")
                             .font(.system(size: 13))
                             .foregroundStyle(StudioPalette.muted)
                             .padding(.horizontal, 15)
@@ -635,8 +635,8 @@ private struct CanvasPanel: View {
                                     WarpingGridBackground(nodes: [])
                                     EmptySurface(
                                         icon: "point.3.connected.trianglepath.dotted",
-                                        title: "Infinite canvas",
-                                        detail: "Generate or load nodes, then connect them in the order they should run."
+                                        title: "NexSpace",
+                                        detail: "generate, load, and chain nodes together"
                                     )
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1787,13 +1787,13 @@ private struct NexPetView: View {
     }
 
     private var statusMessage: String {
-        if isWaving { return "Hey! I'm Nex, your automation builder. Let's create something powerful." }
-        if model.isGenerating || model.runnerStatus == "Generating" { return "Synthesizing workflow nodes locally with AI..." }
-        if model.isRunning || model.runnerStatus == "Running" { return "Executing steps locally. Watch the nodes light up." }
-        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" { return "That run hit some errors. Let's debug and retry." }
-        if model.runnerStatus == "Complete" { return "Automation complete. All steps executed successfully." }
-        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return "Workflow ready for review. Trust to authorize execution." }
-        return "Standing by. Describe what you want to automate."
+        if isWaving { return "oh good, you're here" }
+        if model.isGenerating || model.runnerStatus == "Generating" { return "hold on, i'm doing my little thinking dance..." }
+        if model.isRunning || model.runnerStatus == "Running" { return "okay okay it's happening, watch the nodes light up!" }
+        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" { return "well that was embarrassing" }
+        if model.runnerStatus == "Complete" { return "boom. nailed it." }
+        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return "looks pretty good, trust me" }
+        return "chilling... just tell me what chaos we're automating today"
     }
 
     private func currentAnimationRow() -> Int {
