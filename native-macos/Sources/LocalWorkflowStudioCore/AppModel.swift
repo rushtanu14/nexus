@@ -91,6 +91,10 @@ public final class StudioModel {
         workflow.approvedSignature != signature
     }
 
+    public var moveImpacts: [ImpactItem] {
+        workflow.impacts.filter { $0.action.lowercased() == "move" }
+    }
+
     public var signature: String {
         let nodeBits = workflow.nodes.map { node in
             "\(node.id.uuidString):\(node.kind.rawValue):\(node.title):\(Int(node.x)):\(Int(node.y)):\(node.parameters.sorted(by: { $0.key < $1.key }))"
@@ -178,7 +182,7 @@ public final class StudioModel {
 
     public func dryRun() {
         runnerStatus = "Dry run"
-        logs.insert(RunLog(id: UUID(), time: Date(), node: "Dry Run", message: "Found \(workflow.impacts.count) screenshots that would move", status: .ready), at: 0)
+        logs.insert(RunLog(id: UUID(), time: Date(), node: "Dry Run", message: "Found \(moveImpacts.count) screenshots that would move", status: .ready), at: 0)
         mark(.findScreenshots, as: .success)
         mark(.reviewWarnings, as: .warning)
     }
@@ -195,11 +199,11 @@ public final class StudioModel {
             return
         }
 
-        workflow.lastMovedFiles = workflow.impacts
+        workflow.lastMovedFiles = moveImpacts
         runnerStatus = "Complete"
         mark(.moveFiles, as: .success)
         mark(.logRun, as: .success)
-        logs.insert(RunLog(id: UUID(), time: Date(), node: "Move Files", message: "Moved \(workflow.impacts.count) screenshots to ~/Pictures/Workflow Studio", status: .success), at: 0)
+        logs.insert(RunLog(id: UUID(), time: Date(), node: "Move Files", message: "Moved \(moveImpacts.count) screenshots to ~/Pictures/Workflow Studio", status: .success), at: 0)
         logs.insert(RunLog(id: UUID(), time: Date(), node: "Workflow", message: "Completed locally", status: .success), at: 0)
     }
 

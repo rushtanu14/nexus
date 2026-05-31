@@ -30,6 +30,7 @@ struct ModelTestRunner {
         let review = model.workflow.nodes.first(where: { $0.kind == .reviewWarnings })
         precondition(review?.status == .warning)
         precondition(model.logs.contains(where: { $0.node == "Dry Run" }))
+        precondition(model.logs.contains(where: { $0.node == "Dry Run" && $0.message.contains("Found 2 screenshots") }))
     }
 
     static func testApprovalBlocksAndThenAllowsRun() {
@@ -42,7 +43,9 @@ struct ModelTestRunner {
         precondition(!model.approvalRequired)
         model.runLocally()
         precondition(model.runnerStatus == "Complete")
-        precondition(model.workflow.lastMovedFiles.count == model.workflow.impacts.count)
+        precondition(model.workflow.lastMovedFiles.count == 2)
+        precondition(model.workflow.lastMovedFiles.allSatisfy { $0.action == "move" })
+        precondition(model.logs.contains(where: { $0.node == "Move Files" && $0.message.contains("Moved 2 screenshots") }))
     }
 
     static func testChangingScriptInvalidatesApproval() {
@@ -95,6 +98,7 @@ struct ModelTestRunner {
         model.undoLastRun()
         precondition(model.workflow.lastMovedFiles.isEmpty)
         precondition(model.runnerStatus == "Undone")
+        precondition(model.logs.contains(where: { $0.node == "Undo" && $0.message.contains("Restored 2 moved files") }))
         model.requestAccessibility()
         precondition(model.workflow.accessibilityRequested)
         precondition(model.selectedNode?.kind == .accessibilityFallback)
