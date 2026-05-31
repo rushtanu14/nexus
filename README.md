@@ -11,6 +11,7 @@ The first demo is a screenshot-warning sorter: it finds screenshots, checks for 
 - Shows warnings in simple language before file, script, or app-control actions.
 - Supports dry run, trust approval, local run logs, undo, and macOS Accessibility fallback prompts.
 - Bundles as a native `.app` with a generated Nexus icon.
+- Includes an in-app walkthrough for prompt generation, canvas editing, trust approval, and permissions.
 
 ## Repository Layout
 
@@ -72,6 +73,7 @@ Nexus is designed around local trust controls:
 - Re-approval when scripts, graph connections, or node positions change.
 - Plain-language warnings for file moves, raw scripts, and macOS permissions.
 - Accessibility control only when a workflow needs UI control.
+- Accessibility requests use the native macOS permission prompt and open System Settings directly to Privacy & Security -> Accessibility.
 - Local logs and undo metadata for the last run.
 
 ## Current Status

@@ -218,7 +218,7 @@ public final class StudioModel {
         workflow.accessibilityRequested = true
         mark(.accessibilityFallback, as: .warning)
         selectedNodeID = workflow.nodes.first(where: { $0.kind == .accessibilityFallback })?.id
-        logs.insert(RunLog(id: UUID(), time: Date(), node: "Permissions", message: "Accessibility permission requested only when needed", status: .warning), at: 0)
+        logs.insert(RunLog(id: UUID(), time: Date(), node: "Permissions", message: "macOS Accessibility prompt opened for app control", status: .warning), at: 0)
     }
 
     private func mark(_ kind: NodeKind, as status: NodeStatus) {

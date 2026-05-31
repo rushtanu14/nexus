@@ -1,9 +1,12 @@
 import SwiftUI
 import AppKit
+import ApplicationServices
 import LocalWorkflowStudioCore
 
 struct ContentView: View {
     @Bindable var model: StudioModel
+    @State private var walkthroughOpen = false
+    @State private var walkthroughStepIndex = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -16,7 +19,10 @@ struct ContentView: View {
         ZStack {
             StudioPalette.background.ignoresSafeArea()
             VStack(spacing: 0) {
-                TitleBar(model: model)
+                TitleBar(model: model) {
+                    walkthroughStepIndex = 0
+                    walkthroughOpen = true
+                }
                 Divider().overlay(StudioPalette.line)
                 HStack(spacing: 0) {
                     Sidebar(model: model, compact: compact)
@@ -25,17 +31,42 @@ struct ContentView: View {
                     Divider().overlay(StudioPalette.line)
                     CanvasPanel(model: model, compact: compact)
                     Divider().overlay(StudioPalette.line)
-                    InspectorPanel(model: model, compact: compact)
+                    InspectorPanel(model: model, compact: compact) {
+                        requestAccessibilityPermission()
+                    }
                 }
                 Divider().overlay(StudioPalette.line)
                 LogDrawer(model: model)
             }
+
+            if walkthroughOpen {
+                WalkthroughOverlay(
+                    stepIndex: $walkthroughStepIndex,
+                    close: {
+                        walkthroughOpen = false
+                    },
+                    requestAccessibility: {
+                        requestAccessibilityPermission(showWalkthrough: false)
+                    }
+                )
+            }
+        }
+    }
+
+    private func requestAccessibilityPermission(showWalkthrough: Bool = true) {
+        model.requestAccessibility()
+        AccessibilityPermissionHelper.requestSystemPrompt()
+        AccessibilityPermissionHelper.openAccessibilitySettings()
+        if showWalkthrough {
+            walkthroughStepIndex = WalkthroughStep.permissionIndex
+            walkthroughOpen = true
         }
     }
 }
 
 private struct TitleBar: View {
     @Bindable var model: StudioModel
+    var onOpenWalkthrough: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -44,6 +75,11 @@ private struct TitleBar: View {
             Spacer()
             StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.green)
             StatusPill(label: "Permissions", value: model.workflow.accessibilityRequested ? "Requested" : "Local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.green)
+            Button(action: onOpenWalkthrough) {
+                Image(systemName: "questionmark.circle")
+            }
+            .buttonStyle(IconButtonStyle())
+            .help("Open walkthrough")
             Button(action: model.dryRun) {
                 Image(systemName: "play.fill")
             }
@@ -56,6 +92,269 @@ private struct TitleBar: View {
         .padding(.horizontal, 18)
         .frame(height: 52)
         .background(StudioPalette.chrome)
+    }
+}
+
+private enum AccessibilityPermissionHelper {
+    @discardableResult
+    static func requestSystemPrompt() -> Bool {
+        let promptKey = "AXTrustedCheckOptionPrompt"
+        let options = [promptKey: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
+    static func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+}
+
+private struct WalkthroughStep: Identifiable {
+    var id: String
+    var icon: String
+    var title: String
+    var detail: String
+    var checks: [String]
+
+    static let permissionIndex = 3
+
+    static let steps = [
+        WalkthroughStep(
+            id: "prompt",
+            icon: "wand.and.sparkles",
+            title: "Describe the automation",
+            detail: "Start with plain English. Nexus turns the request into a local workflow canvas instead of making you build every node by hand.",
+            checks: [
+                "Use the prompt box for the goal",
+                "Generate canvas to refresh the graph",
+                "The generated script stays visible before running"
+            ]
+        ),
+        WalkthroughStep(
+            id: "canvas",
+            icon: "point.3.connected.trianglepath.dotted",
+            title: "Edit the node canvas",
+            detail: "The canvas works like an n8n-style editor: drag nodes around, connect output dots to input dots, and click the small x on a wire to delete a connection.",
+            checks: [
+                "Drag a node to reorganize the flow",
+                "Use right-side dots to start connections",
+                "Use wire x buttons or the inspector to remove connections"
+            ]
+        ),
+        WalkthroughStep(
+            id: "review",
+            icon: "checkmark.shield",
+            title: "Dry run, then trust",
+            detail: "Nexus blocks execution until the exact workflow version is trusted. If you move nodes, change wires, or change scripts, approval is required again.",
+            checks: [
+                "Dry Run shows impact first",
+                "Warnings explain risks simply",
+                "Run Locally only works after trust approval"
+            ]
+        ),
+        WalkthroughStep(
+            id: "permissions",
+            icon: "accessibility",
+            title: "Enable computer control only when needed",
+            detail: "For workflows that must click or type in other apps, Nexus asks macOS for Accessibility permission and opens the exact System Settings screen where you can add the app.",
+            checks: [
+                "macOS shows its own permission prompt",
+                "System Settings opens to Accessibility",
+                "You can quit anytime before granting access"
+            ]
+        ),
+        WalkthroughStep(
+            id: "logs",
+            icon: "clock.arrow.circlepath",
+            title: "Check logs and undo",
+            detail: "Local run logs show what happened, and the demo keeps undo metadata for the last file-moving run.",
+            checks: [
+                "Logs stay local",
+                "Undo is available for the last run",
+                "Accessibility is not requested unless needed"
+            ]
+        )
+    ]
+}
+
+private struct WalkthroughOverlay: View {
+    @Binding var stepIndex: Int
+    var close: () -> Void
+    var requestAccessibility: () -> Void
+
+    private var steps: [WalkthroughStep] {
+        WalkthroughStep.steps
+    }
+
+    private var activeStep: WalkthroughStep {
+        steps[min(max(stepIndex, 0), steps.count - 1)]
+    }
+
+    private var isLastStep: Bool {
+        stepIndex >= steps.count - 1
+    }
+
+    private var progress: CGFloat {
+        CGFloat(stepIndex + 1) / CGFloat(steps.count)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.48).ignoresSafeArea()
+
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Label("Nexus walkthrough", systemImage: "sparkles")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(StudioPalette.greenBright)
+                        Spacer()
+                        Button(action: close) {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(IconButtonStyle())
+                        .help("Close walkthrough")
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Step \(stepIndex + 1) of \(steps.count)")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(StudioPalette.muted)
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(StudioPalette.panelStrong)
+                                Capsule()
+                                    .fill(StudioPalette.greenBright)
+                                    .frame(width: proxy.size.width * progress)
+                            }
+                        }
+                        .frame(height: 7)
+                    }
+
+                    HStack(alignment: .top, spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(StudioPalette.greenSoft)
+                            Image(systemName: activeStep.icon)
+                                .font(.system(size: 24, weight: .semibold))
+                                .foregroundStyle(StudioPalette.greenBright)
+                        }
+                        .frame(width: 54, height: 54)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(activeStep.title)
+                                .font(.system(size: 23, weight: .bold))
+                            Text(activeStep.detail)
+                                .font(.system(size: 14))
+                                .foregroundStyle(StudioPalette.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(activeStep.checks, id: \.self) { check in
+                            Label(check, systemImage: "checkmark.circle.fill")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(StudioPalette.text)
+                        }
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(StudioPalette.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+
+                    if activeStep.id == "permissions" {
+                        Button(action: requestAccessibility) {
+                            Label("Open Accessibility Settings", systemImage: "gearshape")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+
+                    HStack(spacing: 10) {
+                        Button("Back") {
+                            stepIndex = max(0, stepIndex - 1)
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(stepIndex == 0)
+
+                        Button(isLastStep ? "Done" : "Next") {
+                            if isLastStep {
+                                close()
+                            } else {
+                                stepIndex = min(steps.count - 1, stepIndex + 1)
+                            }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+                }
+                .padding(22)
+                .frame(width: 520)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Map")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(StudioPalette.muted)
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                        WalkthroughMapRow(
+                            step: step,
+                            index: index,
+                            active: index == stepIndex,
+                            select: {
+                                stepIndex = index
+                            }
+                        )
+                    }
+                    Spacer()
+                }
+                .padding(18)
+                .frame(width: 230)
+                .background(StudioPalette.sidebar)
+            }
+            .frame(width: 750, height: 520)
+            .background(StudioPalette.inspector)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(StudioPalette.line))
+            .shadow(color: .black.opacity(0.44), radius: 40, x: 0, y: 24)
+        }
+    }
+}
+
+private struct WalkthroughMapRow: View {
+    var step: WalkthroughStep
+    var index: Int
+    var active: Bool
+    var select: () -> Void
+
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 10) {
+                Text("\(index + 1)")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 24, height: 24)
+                    .background(active ? StudioPalette.greenBright : StudioPalette.panelStrong)
+                    .foregroundStyle(active ? Color.black.opacity(0.74) : StudioPalette.muted)
+                    .clipShape(Circle())
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(step.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Text(step.id.capitalized)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(StudioPalette.muted)
+                }
+
+                Spacer()
+            }
+            .padding(10)
+            .background(active ? StudioPalette.greenSoft : StudioPalette.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(active ? StudioPalette.green.opacity(0.8) : StudioPalette.line))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -341,6 +640,7 @@ private struct CanvasPanel: View {
 private struct InspectorPanel: View {
     @Bindable var model: StudioModel
     var compact: Bool
+    var requestAccessibility: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -444,7 +744,7 @@ private struct InspectorPanel: View {
                         Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
                         Button("Run Locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
                         Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
-                        Button("Request Accessibility", action: model.requestAccessibility).buttonStyle(SecondaryButtonStyle())
+                        Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
                     } else {
                         HStack(spacing: 8) {
                             Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
@@ -453,7 +753,7 @@ private struct InspectorPanel: View {
 
                         HStack(spacing: 8) {
                             Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
-                            Button("Request Accessibility", action: model.requestAccessibility).buttonStyle(SecondaryButtonStyle())
+                            Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
                         }
                     }
                 }
