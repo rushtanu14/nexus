@@ -255,7 +255,16 @@ private struct CanvasPanel: View {
                     ForEach(model.workflow.edges) { edge in
                         if let from = model.workflow.nodes.first(where: { $0.id == edge.from }),
                            let to = model.workflow.nodes.first(where: { $0.id == edge.to }) {
-                            EdgeLine(from: nodeCenter(from, scale: scale), to: nodeCenter(to, scale: scale), isFallback: edge.isFallback)
+                            let fromPoint = nodeCenter(from, scale: scale)
+                            let toPoint = nodeCenter(to, scale: scale)
+
+                            EdgeLine(from: fromPoint, to: toPoint, isFallback: edge.isFallback)
+
+                            EdgeDeleteButton(isFallback: edge.isFallback) {
+                                model.removeEdge(edge.id)
+                            }
+                            .position(edgeDeletePoint(from: fromPoint, to: toPoint))
+                            .help("Delete connection")
                         }
                     }
 
@@ -306,6 +315,10 @@ private struct CanvasPanel: View {
 
     private func nodeCenter(_ node: WorkflowNode, scale: CGFloat) -> CGPoint {
         CGPoint(x: (node.x + 68) * scale, y: (node.y + 52) * scale)
+    }
+
+    private func edgeDeletePoint(from: CGPoint, to: CGPoint) -> CGPoint {
+        CGPoint(x: (from.x + to.x) / 2, y: (from.y + to.y) / 2)
     }
 
     private func nodeDragGesture(for node: WorkflowNode, scale: CGFloat) -> some Gesture {
@@ -588,6 +601,28 @@ private struct EdgeLine: View {
             path.addCurve(to: to, control1: CGPoint(x: midX, y: from.y), control2: CGPoint(x: midX, y: to.y))
         }
         .stroke(isFallback ? StudioPalette.amber : StudioPalette.green, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: isFallback ? [5, 5] : []))
+    }
+}
+
+private struct EdgeDeleteButton: View {
+    var isFallback: Bool
+    var action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle().fill(StudioPalette.canvas.opacity(0.96))
+                Circle().stroke(isFallback ? StudioPalette.amber : StudioPalette.greenBright, lineWidth: isHovering ? 2 : 1.4)
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(isHovering ? StudioPalette.text : StudioPalette.muted)
+            }
+            .frame(width: isHovering ? 26 : 22, height: isHovering ? 26 : 22)
+            .shadow(color: .black.opacity(isHovering ? 0.28 : 0.16), radius: isHovering ? 8 : 4, x: 0, y: 3)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }
 
