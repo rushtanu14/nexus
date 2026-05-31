@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.10
 import PackageDescription
 
 let package = Package(
@@ -9,7 +9,8 @@ let package = Package(
     products: [
         .library(name: "LocalWorkflowStudioCore", targets: ["LocalWorkflowStudioCore"]),
         .executable(name: "LocalWorkflowStudioNative", targets: ["LocalWorkflowStudioNative"]),
-        .executable(name: "LocalWorkflowStudioNativeModelTests", targets: ["LocalWorkflowStudioNativeModelTests"])
+        .executable(name: "LocalWorkflowStudioNativeModelTests", targets: ["LocalWorkflowStudioNativeModelTests"]),
+        .executable(name: "LocalWorkflowStudioNativeIntegrationTests", targets: ["LocalWorkflowStudioNativeIntegrationTests"])
     ],
     targets: [
         .target(
@@ -26,6 +27,11 @@ let package = Package(
             name: "LocalWorkflowStudioNativeModelTests",
             dependencies: ["LocalWorkflowStudioCore"],
             path: "Tests/LocalWorkflowStudioNativeModelTests"
+        ),
+        .executableTarget(
+            name: "LocalWorkflowStudioNativeIntegrationTests",
+            dependencies: ["LocalWorkflowStudioCore"],
+            path: "Tests/LocalWorkflowStudioNativeIntegrationTests"
         )
     ]
 )

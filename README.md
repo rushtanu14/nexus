@@ -65,6 +65,31 @@ cd native-macos
 swift run LocalWorkflowStudioNativeModelTests
 ```
 
+## Local Workflow Engine
+
+The repository also includes a Node.js workflow engine with AI-generated node shapes and deterministic local runner steps.
+
+```bash
+npm test
+npm start
+```
+
+The local API listens on `http://127.0.0.1:3131`. Browser click/fill, MCP calls, and AI inference use injectable adapters; filesystem, shell, HTTP, and basic browser navigation/extraction have local implementations.
+
+Node generation uses the local Ollama model `qwen2.5-coder:7b`. Install and start it with:
+
+```bash
+npm run model:pull
+npm run model:serve
+```
+
+With Ollama and `npm start` running, verify the same frontend/backend path used by the desktop app:
+
+```bash
+cd native-macos
+swift run LocalWorkflowStudioNativeIntegrationTests
+```
+
 ## Safety Model
 
 Nexus is designed around local trust controls:

@@ -13,6 +13,9 @@ struct ContentView: View {
             shell(compact: proxy.size.width < 1360)
         }
         .foregroundStyle(StudioPalette.text)
+        .task {
+            await model.refreshSavedNodes()
+        }
     }
 
     private func shell(compact: Bool) -> some View {
@@ -24,13 +27,10 @@ struct ContentView: View {
                     walkthroughOpen = true
                 }
                 Divider().overlay(StudioPalette.line)
-                HStack(spacing: 0) {
+                HSplitView {
                     Sidebar(model: model, compact: compact)
-                    Divider().overlay(StudioPalette.line)
                     PromptPanel(model: model, compact: compact)
-                    Divider().overlay(StudioPalette.line)
                     CanvasPanel(model: model, compact: compact)
-                    Divider().overlay(StudioPalette.line)
                     InspectorPanel(model: model, compact: compact) {
                         requestAccessibilityPermission()
                     }
@@ -381,7 +381,7 @@ private struct Sidebar: View {
             .padding(.top, compact ? 2 : 10)
 
             SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "Workflows", active: true, compact: compact)
-            SidebarButton(icon: "folder", label: "Files", active: false, compact: compact)
+            SidebarButton(icon: "square.stack.3d.up", label: "Your Nodes", active: false, compact: compact)
             SidebarButton(icon: "clock", label: "Runs", active: false, compact: compact)
             SidebarButton(icon: "gearshape", label: "Settings", active: false, compact: compact)
 
@@ -411,10 +411,12 @@ private struct Sidebar: View {
             }
         }
         .padding(compact ? 10 : 16)
-        .frame(width: compact ? 72 : 212)
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(minWidth: compact ? 72 : 138, idealWidth: compact ? 88 : 184, maxWidth: 280)
         .layoutPriority(4)
-        .background(StudioPalette.sidebar)
+        .background {
+            PanelBackgroundImage(name: "LeftPanelBackground", opacity: 0.42)
+                .overlay(StudioPalette.sidebar.opacity(0.56))
+        }
     }
 }
 
@@ -454,7 +456,7 @@ private struct PromptPanel: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Ask AI to build a workflow")
                     .font(.system(size: 16, weight: .semibold))
-                Text("Paste the automation details first.")
+                Text("Generated locally with Ollama.")
                     .font(.system(size: 12))
                     .foregroundStyle(StudioPalette.muted)
             }
@@ -462,7 +464,7 @@ private struct PromptPanel: View {
             if model.hasWorkflow {
                 VStack(alignment: .leading, spacing: 10) {
                     Bubble(text: model.workflow.prompt, sender: "You", alignRight: true)
-                    Bubble(text: "Generated canvas, warnings, and local run gates.", sender: "AI", alignRight: false)
+                    Bubble(text: "Generated executable runner steps with the local model.", sender: "Local AI", alignRight: false)
                 }
             }
 
@@ -499,24 +501,6 @@ private struct PromptPanel: View {
                 .disabled(!model.hasWorkflow)
             }
 
-            HStack(spacing: 8) {
-                Button {
-                    model.addGeneratedNode(kind: .reviewWarnings)
-                } label: {
-                    Label("Add warning", systemImage: "exclamationmark.triangle")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(!model.hasWorkflow)
-
-                Button {
-                    model.addGeneratedNode(kind: .accessibilityFallback)
-                } label: {
-                    Label("Add app control", systemImage: "cursorarrow.click.2")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(!model.hasWorkflow)
-            }
-
             if model.hasWorkflow {
                 Text("Current automation")
                     .font(.system(size: 11, weight: .semibold))
@@ -526,12 +510,28 @@ private struct PromptPanel: View {
                 AutomationRow(title: model.workflow.name, subtitle: "Generated from pasted details", active: true)
             }
 
+            if let output = model.workflow.executionOutput {
+                VStack(alignment: .leading, spacing: 7) {
+                    Label("Task completed", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(StudioPalette.greenBright)
+                    Text(output)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(6)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(StudioPalette.greenSoft)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.green.opacity(0.8)))
+            }
+
             Spacer()
         }
         .padding(.horizontal, compact ? 14 : 20)
         .padding(.vertical, 18)
-        .frame(width: compact ? 292 : 336)
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(minWidth: 244, idealWidth: compact ? 286 : 324, maxWidth: 520)
         .layoutPriority(3)
         .background(StudioPalette.background)
     }
@@ -541,6 +541,7 @@ private enum CanvasTab: String, CaseIterable, Identifiable {
     case canvas = "Canvas"
     case code = "Code"
     case runs = "Runs"
+    case nodes = "Your Nodes"
 
     var id: String { rawValue }
 
@@ -549,6 +550,7 @@ private enum CanvasTab: String, CaseIterable, Identifiable {
         case .canvas: return "Drag nodes. Connect output dots to input dots."
         case .code: return "Inspect the generated local script before approving."
         case .runs: return "Review local dry runs, approvals, runs, and undo history."
+        case .nodes: return "Reload executable nodes saved by the local backend."
         }
     }
 
@@ -557,6 +559,7 @@ private enum CanvasTab: String, CaseIterable, Identifiable {
         case .canvas: return compact ? "66%" : "100%"
         case .code: return "Script"
         case .runs: return "\(logCount)"
+        case .nodes: return "Saved"
         }
     }
 }
@@ -587,7 +590,7 @@ private struct CanvasPanel: View {
                 .background(StudioPalette.panel)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
-                .frame(width: compact ? 220 : 244)
+                .frame(width: compact ? 320 : 368)
                 Spacer()
                 Text(model.pendingConnectionSourceID == nil ? selectedTab.guidance : "Choose an input dot to finish the connection.")
                     .font(.system(size: 12, weight: .medium))
@@ -605,76 +608,85 @@ private struct CanvasPanel: View {
             GeometryReader { proxy in
                 switch selectedTab {
                 case .canvas:
-                    ZStack(alignment: .topLeading) {
-                        GridBackground()
-
+                    Group {
                         if model.workflow.nodes.isEmpty {
-                            EmptySurface(
-                                icon: "point.3.connected.trianglepath.dotted",
-                                title: "Empty canvas",
-                                detail: "Paste automation details and generate when ready."
-                            )
+                            ZStack {
+                                GridBackground()
+                                EmptySurface(
+                                    icon: "point.3.connected.trianglepath.dotted",
+                                    title: "Infinite canvas",
+                                    detail: "Generate or load nodes, then connect them in the order they should run."
+                                )
+                            }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
-                            ForEach(model.workflow.edges) { edge in
-                                if let from = model.workflow.nodes.first(where: { $0.id == edge.from }),
-                                   let to = model.workflow.nodes.first(where: { $0.id == edge.to }) {
-                                    let fromPoint = nodeCenter(from, scale: scale)
-                                    let toPoint = nodeCenter(to, scale: scale)
+                            ScrollView([.horizontal, .vertical]) {
+                                ZStack(alignment: .topLeading) {
+                                    GridBackground()
 
-                                    EdgeLine(from: fromPoint, to: toPoint, isFallback: edge.isFallback)
+                                    ForEach(model.workflow.edges) { edge in
+                                        if let from = model.workflow.nodes.first(where: { $0.id == edge.from }),
+                                           let to = model.workflow.nodes.first(where: { $0.id == edge.to }) {
+                                            let fromPoint = nodeCenter(from, scale: scale)
+                                            let toPoint = nodeCenter(to, scale: scale)
 
-                                    EdgeDeleteButton(isFallback: edge.isFallback) {
-                                        model.removeEdge(edge.id)
+                                            EdgeLine(from: fromPoint, to: toPoint, isFallback: edge.isFallback)
+
+                                            EdgeDeleteButton(isFallback: edge.isFallback) {
+                                                model.removeEdge(edge.id)
+                                            }
+                                            .position(edgeDeletePoint(from: fromPoint, to: toPoint))
+                                            .help("Delete connection")
+                                        }
                                     }
-                                    .position(edgeDeletePoint(from: fromPoint, to: toPoint))
-                                    .help("Delete connection")
-                                }
-                            }
 
-                            ForEach(model.workflow.nodes) { node in
-                                NodeCard(
-                                    node: node,
-                                    isSelected: model.selectedNodeID == node.id,
-                                    isConnectionSource: model.pendingConnectionSourceID == node.id,
-                                    onSelect: {
-                                        model.select(node)
-                                    },
-                                    onStartConnection: {
-                                        model.beginConnection(from: node.id)
-                                    },
-                                    onFinishConnection: {
-                                        model.completeConnection(to: node.id)
+                                    ForEach(model.workflow.nodes) { node in
+                                        NodeCard(
+                                            node: node,
+                                            isSelected: model.selectedNodeID == node.id,
+                                            isConnectionSource: model.pendingConnectionSourceID == node.id,
+                                            onSelect: {
+                                                model.select(node)
+                                            },
+                                            onStartConnection: {
+                                                model.beginConnection(from: node.id)
+                                            },
+                                            onFinishConnection: {
+                                                model.completeConnection(to: node.id)
+                                            }
+                                        )
+                                        .scaleEffect(scale)
+                                        .position(nodeCenter(node, scale: scale))
+                                        .simultaneousGesture(nodeDragGesture(for: node, scale: scale))
                                     }
-                                )
-                                .scaleEffect(scale)
-                                .position(nodeCenter(node, scale: scale))
-                                .simultaneousGesture(nodeDragGesture(for: node, scale: scale))
-                            }
 
-                            if let sourceID = model.pendingConnectionSourceID,
-                               let source = model.workflow.nodes.first(where: { $0.id == sourceID }) {
-                                ZStack {
-                                    Circle().fill(StudioPalette.green.opacity(0.16))
-                                    Circle().stroke(StudioPalette.greenBright, lineWidth: 2)
-                                    Image(systemName: "arrow.right")
-                                        .font(.system(size: 13, weight: .bold))
-                                        .foregroundStyle(StudioPalette.greenBright)
+                                    if let sourceID = model.pendingConnectionSourceID,
+                                       let source = model.workflow.nodes.first(where: { $0.id == sourceID }) {
+                                        ZStack {
+                                            Circle().fill(StudioPalette.green.opacity(0.16))
+                                            Circle().stroke(StudioPalette.greenBright, lineWidth: 2)
+                                            Image(systemName: "arrow.right")
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundStyle(StudioPalette.greenBright)
+                                        }
+                                        .frame(width: 42 * scale, height: 42 * scale)
+                                        .position(x: nodeCenter(source, scale: scale).x + 94 * scale, y: nodeCenter(source, scale: scale).y)
+                                    }
+
+                                    MiniMap(nodes: model.workflow.nodes, edges: model.workflow.edges)
+                                        .position(x: 108, y: 92)
                                 }
-                                .frame(width: 42 * scale, height: 42 * scale)
-                                .position(x: nodeCenter(source, scale: scale).x + 94 * scale, y: nodeCenter(source, scale: scale).y)
+                                .frame(width: canvasWidth(viewport: proxy.size.width), height: canvasHeight(viewport: proxy.size.height), alignment: .topLeading)
                             }
-
-                            MiniMap(nodes: model.workflow.nodes, edges: model.workflow.edges)
-                                .position(x: 108, y: proxy.size.height - 84)
                         }
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipShape(Rectangle())
                 case .code:
                     CodeSurface(model: model)
                 case .runs:
                     RunsSurface(model: model)
+                case .nodes:
+                    NodesSurface(model: model)
                 }
             }
         }
@@ -685,6 +697,14 @@ private struct CanvasPanel: View {
 
     private func nodeCenter(_ node: WorkflowNode, scale: CGFloat) -> CGPoint {
         CGPoint(x: (node.x + 68) * scale, y: (node.y + 52) * scale)
+    }
+
+    private func canvasWidth(viewport: CGFloat) -> CGFloat {
+        max(viewport, CGFloat(model.workflow.nodes.map(\.x).max() ?? 0) + 760)
+    }
+
+    private func canvasHeight(viewport: CGFloat) -> CGFloat {
+        max(viewport, CGFloat(model.workflow.nodes.map(\.y).max() ?? 0) + 560)
     }
 
     private func edgeDeletePoint(from: CGPoint, to: CGPoint) -> CGPoint {
@@ -765,7 +785,10 @@ private struct CodeSurface: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StudioPalette.canvas)
+        .background {
+            PanelBackgroundImage(name: "TerminalPanelBackground", opacity: 0.5)
+                .overlay(StudioPalette.canvas.opacity(0.74))
+        }
     }
 }
 
@@ -804,6 +827,72 @@ private struct RunsSurface: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .padding(12)
+                        .background(StudioPalette.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(StudioPalette.canvas)
+    }
+}
+
+private struct NodesSurface: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 12) {
+                    Label("Your Nodes", systemImage: "square.stack.3d.up")
+                        .font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                    Button {
+                        Task { await model.refreshSavedNodes() }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+
+                Text("Generated executable nodes saved by the local backend. Load one to inspect, trust, and run it again.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(StudioPalette.muted)
+
+                if model.savedNodes.isEmpty {
+                    EmptySurface(icon: "square.stack.3d.up", title: "No saved nodes yet", detail: "Generate a workflow and it will appear here.")
+                        .frame(maxWidth: .infinity, minHeight: 280)
+                } else {
+                    ForEach(model.savedNodes, id: \.id) { node in
+                        HStack(alignment: .top, spacing: 14) {
+                            Image(systemName: "gearshape.2")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(StudioPalette.greenBright)
+                                .frame(width: 28)
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(node.meta.label)
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("\(node.meta.app) / \(node.meta.category) / \(node.runner.steps.count) step(s)")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(StudioPalette.muted)
+                                Text(node.runner.steps.map(\.primitive).joined(separator: "  ->  "))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(StudioPalette.code)
+                                    .lineLimit(2)
+                            }
+
+                            Spacer()
+
+                            Button("Load") {
+                                model.loadSavedNode(node)
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
+                        }
+                        .padding(14)
                         .background(StudioPalette.panel)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
@@ -932,6 +1021,18 @@ private struct InspectorPanel: View {
                                 .background(StudioPalette.codeBackground)
                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
+
+                        if let output = model.workflow.executionOutput {
+                            InspectorSection(title: "Last Output") {
+                                Text(output)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(StudioPalette.greenBright)
+                                    .padding(12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(StudioPalette.codeBackground)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                        }
                     }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 18)
@@ -968,8 +1069,7 @@ private struct InspectorPanel: View {
                 EmptySurface(icon: "sidebar.right", title: "No node selected", detail: "Node settings will appear here.")
             }
         }
-        .frame(width: compact ? 300 : 372)
-        .fixedSize(horizontal: true, vertical: false)
+        .frame(minWidth: 260, idealWidth: compact ? 300 : 344, maxWidth: 560)
         .layoutPriority(4)
         .background(StudioPalette.inspector)
     }
@@ -986,6 +1086,7 @@ private struct InspectorPanel: View {
         case .moveFiles: return "Moves files only after dry run and trust approval. Undo is available for the last local run."
         case .logRun: return "Appends a local run log so background work is inspectable later."
         case .accessibilityFallback: return "Requests macOS Accessibility only when UI control is needed. It never runs silently."
+        case .automationAction: return "Runs this exact primitive with the displayed arguments after the executable node is approved."
         }
     }
 }
@@ -1031,7 +1132,23 @@ private struct LogDrawer: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(height: 132)
-        .background(StudioPalette.chrome)
+        .background {
+            PanelBackgroundImage(name: "TerminalPanelBackground", opacity: 0.42)
+                .overlay(StudioPalette.chrome.opacity(0.74))
+        }
+    }
+}
+
+private struct PanelBackgroundImage: View {
+    var name: String
+    var opacity: Double
+
+    var body: some View {
+        Image(name, bundle: .module)
+            .resizable()
+            .scaledToFill()
+            .opacity(opacity)
+            .clipped()
     }
 }
 
@@ -1448,6 +1565,7 @@ private func iconName(for kind: NodeKind) -> String {
     case .moveFiles: return "folder.badge.gearshape"
     case .logRun: return "doc.text"
     case .accessibilityFallback: return "figure.arms.open"
+    case .automationAction: return "gearshape.2"
     }
 }
 

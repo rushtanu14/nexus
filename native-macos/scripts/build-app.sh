@@ -11,6 +11,8 @@ ICON_SOURCE="$ROOT_DIR/Sources/LocalWorkflowStudioNative/Resources/AppIcon.png"
 ICONSET_DIR="$ROOT_DIR/.build/AppIcon.iconset"
 ICNS_PATH="$RESOURCES_DIR/AppIcon.icns"
 RESOURCE_BUNDLE="LocalWorkflowStudioNative_LocalWorkflowStudioNative.bundle"
+ENGINE_SOURCE="$ROOT_DIR/.."
+ENGINE_DESTINATION="$RESOURCES_DIR/engine"
 
 cd "$ROOT_DIR"
 swift build --product LocalWorkflowStudioNative
@@ -26,6 +28,9 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$ICONSET_DIR"
 cp "$BUILD_DIR/LocalWorkflowStudioNative" "$MACOS_DIR/LocalWorkflowStudioNative"
 cp "$ROOT_DIR/AppBundle/Info.plist" "$CONTENTS_DIR/Info.plist"
 cp -R "$BUILD_DIR/$RESOURCE_BUNDLE" "$CONTENTS_DIR/$RESOURCE_BUNDLE"
+mkdir -p "$ENGINE_DESTINATION"
+cp "$ENGINE_SOURCE/package.json" "$ENGINE_SOURCE/package-lock.json" "$ENGINE_DESTINATION/"
+cp -R "$ENGINE_SOURCE/src" "$ENGINE_SOURCE/node_modules" "$ENGINE_DESTINATION/"
 
 sips -z 16 16 "$ICON_SOURCE" --out "$ICONSET_DIR/icon_16x16.png" >/dev/null
 sips -z 32 32 "$ICON_SOURCE" --out "$ICONSET_DIR/icon_16x16@2x.png" >/dev/null
