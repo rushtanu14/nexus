@@ -1,19 +1,13 @@
-# Nexus
+<div align="center">
+  
+<img width="1470" height="920" alt="Screenshot 2026-05-31 at 2 09 15 AM" src="https://github.com/user-attachments/assets/6323fbef-413a-45e6-bc9e-d3982a200a2a" />
 
-Nexus is a native macOS prototype for AI-generated local automations. You describe what you want in natural language, Nexus turns it into an editable node canvas, and the local runner keeps risky actions behind dry runs, warnings, and explicit approval.
+</div>
 
-The first demo is a screenshot-warning sorter: it finds screenshots, checks for warning indicators, proposes file moves, shows the raw script, and requires trust approval before running locally.
 
-## What It Does
+# dev notes
 
-- Generates a workflow canvas from a plain-English prompt.
-- Lets users drag nodes freely and manually connect node ports.
-- Shows warnings in simple language before file, script, or app-control actions.
-- Supports dry run, trust approval, local run logs, undo, and macOS Accessibility fallback prompts.
-- Bundles as a native `.app` with a generated Nexus icon.
-- Includes an in-app walkthrough for prompt generation, canvas editing, trust approval, and permissions.
-
-## Repository Layout
+## repo
 
 ```text
 native-macos/
@@ -30,25 +24,25 @@ docs/
   superpowers/                    # product/spec/implementation notes
 ```
 
-## Run In Xcode
+## XCODE
 
 1. Open `native-macos/Package.swift` in Xcode.
 2. Select the `LocalWorkflowStudioNative` executable scheme.
 3. Build and run.
 
-## Run From Terminal
+## terminal
 
 ```bash
 ./run.sh
 ```
 
-To build without launching the app:
+no app:
 
 ```bash
 ./run.sh --no-open
 ```
 
-## Build The App Bundle
+## app bundle
 
 ```bash
 cd native-macos
@@ -58,14 +52,14 @@ open dist/Nexus.app
 
 The bundle script generates `AppIcon.icns` from `Sources/LocalWorkflowStudioNative/Resources/AppIcon.png`.
 
-## Test
+## test
 
 ```bash
 cd native-macos
 swift run LocalWorkflowStudioNativeModelTests
 ```
 
-## Local Workflow Engine
+## local workflow engine
 
 The repository also includes a Node.js workflow engine with AI-generated node shapes and deterministic local runner steps.
 
@@ -89,18 +83,3 @@ With Ollama and `npm start` running, verify the same frontend/backend path used 
 cd native-macos
 swift run LocalWorkflowStudioNativeIntegrationTests
 ```
-
-## Safety Model
-
-Nexus is designed around local trust controls:
-
-- Dry run before execution.
-- Re-approval when scripts, graph connections, or node positions change.
-- Plain-language warnings for file moves, raw scripts, and macOS permissions.
-- Accessibility control only when a workflow needs UI control.
-- Accessibility requests use the native macOS permission prompt and open System Settings directly to Privacy & Security -> Accessibility.
-- Local logs and undo metadata for the last run.
-
-## Current Status
-
-This is an early native MVP. The UI, graph editor, warning flow, app icon, packaging script, and model tests are implemented. The actual runner is still a demo spine and should be expanded with real macOS adapters before production use.
