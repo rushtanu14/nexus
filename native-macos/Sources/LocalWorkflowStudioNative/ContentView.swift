@@ -73,29 +73,35 @@ private struct TitleBar: View {
     var onOpenWalkthrough: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text("Nexus")
-                .font(.system(size: 14, weight: .semibold))
-            Spacer()
-            StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.green)
-            StatusPill(label: "Permissions", value: model.workflow.accessibilityRequested ? "Requested" : "Local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.green)
-            Button(action: onOpenWalkthrough) {
-                Image(systemName: "questionmark.circle")
+        ZStack {
+            PanelBackdrop(imageName: "TitleBarBackground", scrimOpacity: 0.55, scaleY: 0.65)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            HStack(spacing: 12) {
+                Text("NEXUS")
+                    .font(.system(size: 14, weight: .heavy, design: .default))
+                    .tracking(2)
+                    .foregroundStyle(StudioPalette.text)
+                Spacer()
+                StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.accent)
+                StatusPill(label: "Permissions", value: model.workflow.accessibilityRequested ? "Requested" : "Local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.accent)
+                Button(action: onOpenWalkthrough) {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(IconButtonStyle())
+                .help("Open walkthrough")
+                Button(action: model.dryRun) {
+                    Image(systemName: "play.fill")
+                }
+                .buttonStyle(IconButtonStyle())
+                Button(action: model.generateWorkflow) {
+                    Image(systemName: "wand.and.sparkles")
+                }
+                .buttonStyle(IconButtonStyle())
             }
-            .buttonStyle(IconButtonStyle())
-            .help("Open walkthrough")
-            Button(action: model.dryRun) {
-                Image(systemName: "play.fill")
-            }
-            .buttonStyle(IconButtonStyle())
-            Button(action: model.generateWorkflow) {
-                Image(systemName: "wand.and.sparkles")
-            }
-            .buttonStyle(IconButtonStyle())
+            .padding(.horizontal, 18)
         }
-        .padding(.horizontal, 18)
         .frame(height: 52)
-        .background(StudioPalette.chrome)
     }
 }
 
@@ -206,14 +212,14 @@ private struct WalkthroughOverlay: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.48).ignoresSafeArea()
+            Color.black.opacity(0.65).ignoresSafeArea()
 
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Label("Nexus walkthrough", systemImage: "sparkles")
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(StudioPalette.greenBright)
+                            .foregroundStyle(StudioPalette.accentBright)
                         Spacer()
                         Button(action: close) {
                             Image(systemName: "xmark")
@@ -230,7 +236,7 @@ private struct WalkthroughOverlay: View {
                             ZStack(alignment: .leading) {
                                 Capsule().fill(StudioPalette.panelStrong)
                                 Capsule()
-                                    .fill(StudioPalette.greenBright)
+                                    .fill(StudioPalette.accentBright)
                                     .frame(width: proxy.size.width * progress)
                             }
                         }
@@ -239,11 +245,11 @@ private struct WalkthroughOverlay: View {
 
                     HStack(alignment: .top, spacing: 14) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(StudioPalette.greenSoft)
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(StudioPalette.accentSoft)
                             Image(systemName: activeStep.icon)
                                 .font(.system(size: 24, weight: .semibold))
-                                .foregroundStyle(StudioPalette.greenBright)
+                                .foregroundStyle(StudioPalette.accentBright)
                         }
                         .frame(width: 54, height: 54)
 
@@ -267,8 +273,8 @@ private struct WalkthroughOverlay: View {
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(StudioPalette.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
 
                     if activeStep.id == "permissions" {
                         Button(action: requestAccessibility) {
@@ -319,9 +325,9 @@ private struct WalkthroughOverlay: View {
             }
             .frame(width: 750, height: 520)
             .background(StudioPalette.inspector)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(StudioPalette.line))
-            .shadow(color: .black.opacity(0.44), radius: 40, x: 0, y: 24)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(StudioPalette.line))
+            .shadow(color: .black.opacity(0.55), radius: 40, x: 0, y: 24)
         }
     }
 }
@@ -338,9 +344,9 @@ private struct WalkthroughMapRow: View {
                 Text("\(index + 1)")
                     .font(.system(size: 11, weight: .bold))
                     .frame(width: 24, height: 24)
-                    .background(active ? StudioPalette.greenBright : StudioPalette.panelStrong)
-                    .foregroundStyle(active ? Color.black.opacity(0.74) : StudioPalette.muted)
-                    .clipShape(Circle())
+                    .background(active ? StudioPalette.accentBright : StudioPalette.panelStrong)
+                    .foregroundStyle(active ? Color.black.opacity(0.85) : StudioPalette.muted)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(step.title)
@@ -354,9 +360,9 @@ private struct WalkthroughMapRow: View {
                 Spacer()
             }
             .padding(10)
-            .background(active ? StudioPalette.greenSoft : StudioPalette.panel)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(active ? StudioPalette.green.opacity(0.8) : StudioPalette.line))
+            .background(active ? StudioPalette.accentSoft : StudioPalette.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(active ? StudioPalette.accent.opacity(0.8) : StudioPalette.line))
         }
         .buttonStyle(.plain)
     }
@@ -375,11 +381,12 @@ private struct Sidebar: View {
                 VStack(spacing: 10) {
                     AppIconImage()
                         .frame(width: compact ? 44 : 78, height: compact ? 44 : 78)
-                        .clipShape(RoundedRectangle(cornerRadius: compact ? 12 : 18, style: .continuous))
-                        .shadow(color: .black.opacity(0.25), radius: 18, x: 0, y: 12)
+                        .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 12, style: .continuous))
+                        .shadow(color: StudioPalette.accentBright.opacity(0.15), radius: 18, x: 0, y: 12)
                     if !compact {
-                        Text("Nexus")
-                            .font(.system(size: 13, weight: .semibold))
+                        Text("NEXUS")
+                            .font(.system(size: 13, weight: .heavy))
+                            .tracking(2)
                         Text("v0.1.0 native")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(StudioPalette.muted)
@@ -397,25 +404,25 @@ private struct Sidebar: View {
 
                 if compact {
                     Image(systemName: "circle.fill")
-                        .foregroundStyle(StudioPalette.green)
+                        .foregroundStyle(StudioPalette.accent)
                         .frame(maxWidth: .infinity)
                         .help("Runner Local")
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Runner Local", systemImage: "circle.fill")
-                            .foregroundStyle(StudioPalette.green)
+                            .foregroundStyle(StudioPalette.accent)
                         Text("Workspace")
                             .foregroundStyle(StudioPalette.muted)
                         Text("~/Workflow Studio")
-                            .foregroundStyle(StudioPalette.green)
-                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(StudioPalette.accent)
+                            .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                     }
                     .font(.system(size: 12, weight: .medium))
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(StudioPalette.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
                 }
             }
             .padding(compact ? 10 : 16)
@@ -447,11 +454,11 @@ private struct SidebarButton: View {
             .padding(.horizontal, compact ? 0 : 12)
             .frame(height: 42)
             .frame(maxWidth: .infinity)
-            .background(active ? StudioPalette.greenSoft : Color.clear)
-            .foregroundStyle(active ? StudioPalette.greenBright : StudioPalette.text)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(active ? StudioPalette.green.opacity(0.85) : .clear))
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(active ? StudioPalette.accentSoft : Color.clear)
+            .foregroundStyle(active ? StudioPalette.accentBright : StudioPalette.text)
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(active ? StudioPalette.accent.opacity(0.85) : .clear))
+            .contentShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
         }
         .buttonStyle(.plain)
         .help(label)
@@ -463,88 +470,91 @@ private struct PromptPanel: View {
     var compact: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Ask AI to build a workflow")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("Generated locally with Ollama.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(StudioPalette.muted)
-            }
-
-            if model.hasWorkflow {
-                VStack(alignment: .leading, spacing: 10) {
-                    Bubble(text: model.workflow.prompt, sender: "You", alignRight: true)
-                    Bubble(text: "Generated executable runner steps with the local model.", sender: "Local AI", alignRight: false)
-                }
-            }
-
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $model.prompt)
-                    .font(.system(size: 13))
-                    .scrollContentBackground(.hidden)
-                    .padding(10)
-
-                if model.prompt.isEmpty {
-                    Text("Paste the automation you want Nexus to build.")
-                        .font(.system(size: 13))
+        ReactiveBackgroundContainer(color: StudioPalette.background) {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ask AI to build a workflow")
+                        .font(.system(size: 16, weight: .bold))
+                    Text("Generated locally with Ollama.")
+                        .font(.system(size: 12))
                         .foregroundStyle(StudioPalette.muted)
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 18)
-                        .allowsHitTesting(false)
                 }
-            }
-            .frame(height: model.hasWorkflow ? 118 : 168)
-            .background(StudioPalette.panelStrong)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
 
-            HStack {
-                Button(action: model.generateWorkflow) {
-                    Label("Generate canvas", systemImage: "wand.and.sparkles")
+                if model.hasWorkflow {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Bubble(text: model.workflow.prompt, sender: "You", alignRight: true)
+                        Bubble(text: "Generated executable runner steps with the local model.", sender: "Local AI", alignRight: false)
+                    }
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(!model.canGenerate)
-                Button(action: model.dryRun) {
-                    Label("Dry run", systemImage: "play")
+
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $model.prompt)
+                        .font(.system(size: 13))
+                        .scrollContentBackground(.hidden)
+                        .padding(10)
+
+                    if model.prompt.isEmpty {
+                        Text("Paste the automation you want Nexus to build.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(StudioPalette.muted)
+                            .padding(.horizontal, 15)
+                            .padding(.vertical, 18)
+                            .allowsHitTesting(false)
+                    }
                 }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(!model.hasWorkflow)
-            }
+                .frame(height: model.hasWorkflow ? 118 : 168)
+                .background(StudioPalette.panelStrong)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
 
-            if model.hasWorkflow {
-                Text("Current automation")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(StudioPalette.muted)
-                    .padding(.top, 4)
-
-                AutomationRow(title: model.workflow.name, subtitle: "Generated from pasted details", active: true)
-            }
-
-            if let output = model.workflow.executionOutput {
-                VStack(alignment: .leading, spacing: 7) {
-                    Label("Task completed", systemImage: "checkmark.circle.fill")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(StudioPalette.greenBright)
-                    Text(output)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .lineLimit(6)
+                HStack {
+                    Button(action: model.generateWorkflow) {
+                        Label("Generate canvas", systemImage: "wand.and.sparkles")
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(!model.canGenerate)
+                    Button(action: model.dryRun) {
+                        Label("Dry run", systemImage: "play")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(!model.hasWorkflow)
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(StudioPalette.greenSoft)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.green.opacity(0.8)))
-            }
 
-            Spacer()
+                if model.hasWorkflow {
+                    Text("Current automation")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(StudioPalette.muted)
+                        .padding(.top, 4)
+
+                    AutomationRow(title: model.workflow.name, subtitle: "Generated from pasted details", active: true)
+                }
+
+                if let output = model.workflow.executionOutput {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Label("Task completed", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(StudioPalette.accentBright)
+                        Text(output)
+                            .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                            .textSelection(.enabled)
+                            .lineLimit(6)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(StudioPalette.accentSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.accent.opacity(0.8)))
+                }
+
+                Spacer()
+
+                NexPetView(model: model)
+            }
+            .padding(.horizontal, compact ? 14 : 20)
+            .padding(.vertical, 18)
         }
-        .padding(.horizontal, compact ? 14 : 20)
-        .padding(.vertical, 18)
         .frame(minWidth: 244, idealWidth: compact ? 286 : 324, maxWidth: 520)
         .layoutPriority(3)
-        .background(StudioPalette.background)
     }
 }
 
@@ -599,18 +609,18 @@ private struct CanvasPanel: View {
                 }
                 .padding(3)
                 .background(StudioPalette.panel)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
                 .frame(width: compact ? 320 : 368)
                 Spacer()
                 Text(model.pendingConnectionSourceID == nil ? selectedTab.guidance : "Choose an input dot to finish the connection.")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(model.pendingConnectionSourceID == nil ? StudioPalette.muted : StudioPalette.greenBright)
+                    .foregroundStyle(model.pendingConnectionSourceID == nil ? StudioPalette.muted : StudioPalette.accentBright)
                     .lineLimit(1)
                 StatusPill(
                     label: selectedTab == .canvas ? "Zoom" : selectedTab.rawValue,
                     value: selectedTab.metricValue(compact: compact, logCount: model.logs.count),
-                    color: selectedTab == .runs ? StudioPalette.green : StudioPalette.muted
+                    color: selectedTab == .runs ? StudioPalette.accent : StudioPalette.muted
                 )
             }
             .padding(.horizontal, 18)
@@ -620,76 +630,76 @@ private struct CanvasPanel: View {
                 switch selectedTab {
                 case .canvas:
                     Group {
-                        if model.workflow.nodes.isEmpty {
-                            ZStack {
-                                GridBackground()
-                                EmptySurface(
-                                    icon: "point.3.connected.trianglepath.dotted",
-                                    title: "Infinite canvas",
-                                    detail: "Generate or load nodes, then connect them in the order they should run."
-                                )
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            ScrollView([.horizontal, .vertical]) {
-                                ZStack(alignment: .topLeading) {
-                                    GridBackground()
-
-                                    ForEach(model.workflow.edges) { edge in
-                                        if let from = model.workflow.nodes.first(where: { $0.id == edge.from }),
-                                           let to = model.workflow.nodes.first(where: { $0.id == edge.to }) {
-                                            let fromPoint = nodeCenter(from, scale: scale)
-                                            let toPoint = nodeCenter(to, scale: scale)
-
-                                            EdgeLine(from: fromPoint, to: toPoint, isFallback: edge.isFallback)
-
-                                            EdgeDeleteButton(isFallback: edge.isFallback) {
-                                                model.removeEdge(edge.id)
-                                            }
-                                            .position(edgeDeletePoint(from: fromPoint, to: toPoint))
-                                            .help("Delete connection")
-                                        }
-                                    }
-
-                                    ForEach(model.workflow.nodes) { node in
-                                        NodeCard(
-                                            node: node,
-                                            isSelected: model.selectedNodeID == node.id,
-                                            isConnectionSource: model.pendingConnectionSourceID == node.id,
-                                            onSelect: {
-                                                model.select(node)
-                                            },
-                                            onStartConnection: {
-                                                model.beginConnection(from: node.id)
-                                            },
-                                            onFinishConnection: {
-                                                model.completeConnection(to: node.id)
-                                            }
-                                        )
-                                        .scaleEffect(scale)
-                                        .position(nodeCenter(node, scale: scale))
-                                        .simultaneousGesture(nodeDragGesture(for: node, scale: scale))
-                                    }
-
-                                    if let sourceID = model.pendingConnectionSourceID,
-                                       let source = model.workflow.nodes.first(where: { $0.id == sourceID }) {
-                                        ZStack {
-                                            Circle().fill(StudioPalette.green.opacity(0.16))
-                                            Circle().stroke(StudioPalette.greenBright, lineWidth: 2)
-                                            Image(systemName: "arrow.right")
-                                                .font(.system(size: 13, weight: .bold))
-                                                .foregroundStyle(StudioPalette.greenBright)
-                                        }
-                                        .frame(width: 42 * scale, height: 42 * scale)
-                                        .position(x: nodeCenter(source, scale: scale).x + 94 * scale, y: nodeCenter(source, scale: scale).y)
-                                    }
-
-                                    MiniMap(nodes: model.workflow.nodes, edges: model.workflow.edges)
-                                        .position(x: 108, y: 92)
+                            if model.workflow.nodes.isEmpty {
+                                ZStack {
+                                    WarpingGridBackground(nodes: [])
+                                    EmptySurface(
+                                        icon: "point.3.connected.trianglepath.dotted",
+                                        title: "Infinite canvas",
+                                        detail: "Generate or load nodes, then connect them in the order they should run."
+                                    )
                                 }
-                                .frame(width: canvasWidth(viewport: proxy.size.width), height: canvasHeight(viewport: proxy.size.height), alignment: .topLeading)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            } else {
+                                ScrollView([.horizontal, .vertical]) {
+                                    ZStack(alignment: .topLeading) {
+                                        WarpingGridBackground(nodes: model.workflow.nodes)
+
+                                        ForEach(model.workflow.edges) { edge in
+                                            if let from = model.workflow.nodes.first(where: { $0.id == edge.from }),
+                                               let to = model.workflow.nodes.first(where: { $0.id == edge.to }) {
+                                                let fromPoint = nodeCenter(from, scale: scale)
+                                                let toPoint = nodeCenter(to, scale: scale)
+
+                                                EdgeLine(from: fromPoint, to: toPoint, isFallback: edge.isFallback)
+
+                                                EdgeDeleteButton(isFallback: edge.isFallback) {
+                                                    model.removeEdge(edge.id)
+                                                }
+                                                .position(edgeDeletePoint(from: fromPoint, to: toPoint))
+                                                .help("Delete connection")
+                                            }
+                                        }
+
+                                        ForEach(model.workflow.nodes) { node in
+                                            NodeCard(
+                                                node: node,
+                                                isSelected: model.selectedNodeID == node.id,
+                                                isConnectionSource: model.pendingConnectionSourceID == node.id,
+                                                onSelect: {
+                                                    model.select(node)
+                                                },
+                                                onStartConnection: {
+                                                    model.beginConnection(from: node.id)
+                                                },
+                                                onFinishConnection: {
+                                                    model.completeConnection(to: node.id)
+                                                }
+                                            )
+                                            .scaleEffect(scale)
+                                            .position(nodeCenter(node, scale: scale))
+                                            .simultaneousGesture(nodeDragGesture(for: node, scale: scale))
+                                        }
+
+                                        if let sourceID = model.pendingConnectionSourceID,
+                                           let source = model.workflow.nodes.first(where: { $0.id == sourceID }) {
+                                            ZStack {
+                                                RoundedRectangle(cornerRadius: 3).fill(StudioPalette.accent.opacity(0.16))
+                                                RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.accentBright, lineWidth: 2)
+                                                Image(systemName: "arrow.right")
+                                                    .font(.system(size: 13, weight: .bold))
+                                                    .foregroundStyle(StudioPalette.accentBright)
+                                            }
+                                            .frame(width: 42 * scale, height: 42 * scale)
+                                            .position(x: nodeCenter(source, scale: scale).x + 94 * scale, y: nodeCenter(source, scale: scale).y)
+                                        }
+
+                                        MiniMap(nodes: model.workflow.nodes, edges: model.workflow.edges)
+                                            .position(x: 108, y: 92)
+                                    }
+                                    .frame(width: canvasWidth(viewport: proxy.size.width), height: canvasHeight(viewport: proxy.size.height), alignment: .topLeading)
+                                }
                             }
-                        }
                     }
                     .clipShape(Rectangle())
                 case .code:
@@ -743,60 +753,60 @@ private struct CodeSurface: View {
     @Bindable var model: StudioModel
 
     var body: some View {
-        Group {
-            if model.hasWorkflow {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HStack(alignment: .center, spacing: 12) {
-                            Label("Generated Local Script", systemImage: "chevron.left.forwardslash.chevron.right")
-                                .font(.system(size: 16, weight: .semibold))
-                            Spacer()
-                            StatusPill(
-                                label: "Trust",
-                                value: model.approvalRequired ? "Review" : "Trusted",
-                                color: model.approvalRequired ? StudioPalette.amber : StudioPalette.green
-                            )
-                        }
-
-                        Text(model.workflow.rawScript)
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(StudioPalette.code)
-                            .padding(16)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(StudioPalette.codeBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
-                            .textSelection(.enabled)
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Warnings".uppercased())
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(StudioPalette.muted)
-
-                            ForEach(model.workflow.warnings, id: \.self) { warning in
-                                Label(warning, systemImage: "exclamationmark.triangle")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(StudioPalette.amber)
-                                    .padding(10)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(StudioPalette.panel)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            Group {
+                if model.hasWorkflow {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            HStack(alignment: .center, spacing: 12) {
+                                Label("Generated Local Script", systemImage: "chevron.left.forwardslash.chevron.right")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Spacer()
+                                StatusPill(
+                                    label: "Trust",
+                                    value: model.approvalRequired ? "Review" : "Trusted",
+                                    color: model.approvalRequired ? StudioPalette.amber : StudioPalette.accent
+                                )
                             }
-                        }
 
-                        Text("Raw scripts are visible for inspection. Nexus still uses dry-run and trust approval gates before a local run.")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(StudioPalette.muted)
+                            Text(model.workflow.rawScript)
+                                .font(.custom("Berkeley Mono", size: 13, relativeTo: .body).monospaced())
+                                .foregroundStyle(StudioPalette.code)
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(StudioPalette.codeBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+                                .textSelection(.enabled)
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Warnings".uppercased())
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(StudioPalette.muted)
+
+                                ForEach(model.workflow.warnings, id: \.self) { warning in
+                                    Label(warning, systemImage: "exclamationmark.triangle")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(StudioPalette.amber)
+                                        .padding(10)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(StudioPalette.panel)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+                                }
+                            }
+
+                            Text("Raw scripts are visible for inspection. Nexus still uses dry-run and trust approval gates before a local run.")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(StudioPalette.muted)
+                        }
+                        .padding(24)
                     }
-                    .padding(24)
+                } else {
+                    EmptySurface(icon: "doc.text", title: "No code yet", detail: "Generated script output will appear here.")
                 }
-            } else {
-                EmptySurface(icon: "doc.text", title: "No code yet", detail: "Generated script output will appear here.")
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StudioPalette.canvas)
     }
 }
 
@@ -804,47 +814,47 @@ private struct RunsSurface: View {
     @Bindable var model: StudioModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 12) {
-                    Label("Local Run Timeline", systemImage: "clock.arrow.circlepath")
-                        .font(.system(size: 16, weight: .semibold))
-                    Spacer()
-                    StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.green)
-                }
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .center, spacing: 12) {
+                        Label("Local Run Timeline", systemImage: "clock.arrow.circlepath")
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer()
+                        StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.accent)
+                    }
 
-                if model.logs.isEmpty {
-                    EmptySurface(icon: "clock", title: "No runs yet", detail: "Run history will appear here.")
-                        .frame(maxWidth: .infinity, minHeight: 280)
-                } else {
-                    ForEach(model.logs) { log in
-                        HStack(alignment: .top, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(log.node)
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(statusColor(log.status))
-                                Text(log.time, style: .time)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(StudioPalette.muted)
+                    if model.logs.isEmpty {
+                        EmptySurface(icon: "clock", title: "No runs yet", detail: "Run history will appear here.")
+                            .frame(maxWidth: .infinity, minHeight: 280)
+                    } else {
+                        ForEach(model.logs) { log in
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(log.node)
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(statusColor(log.status))
+                                    Text(log.time, style: .time)
+                                        .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                        .foregroundStyle(StudioPalette.muted)
+                                }
+                                .frame(width: 96, alignment: .leading)
+
+                                Text(log.message)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(StudioPalette.text)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(width: 96, alignment: .leading)
-
-                            Text(log.message)
-                                .font(.system(size: 13))
-                                .foregroundStyle(StudioPalette.text)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(12)
+                            .background(StudioPalette.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
                         }
-                        .padding(12)
-                        .background(StudioPalette.panel)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
                     }
                 }
+                .padding(24)
             }
-            .padding(24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StudioPalette.canvas)
     }
 }
 
@@ -852,65 +862,65 @@ private struct NodesSurface: View {
     @Bindable var model: StudioModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 12) {
-                    Label("Your Nodes", systemImage: "square.stack.3d.up")
-                        .font(.system(size: 16, weight: .semibold))
-                    Spacer()
-                    Button {
-                        Task { await model.refreshSavedNodes() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                }
-
-                Text("Generated executable nodes saved by the local backend. Load one to inspect, trust, and run it again.")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(StudioPalette.muted)
-
-                if model.savedNodes.isEmpty {
-                    EmptySurface(icon: "square.stack.3d.up", title: "No saved nodes yet", detail: "Generate a workflow and it will appear here.")
-                        .frame(maxWidth: .infinity, minHeight: 280)
-                } else {
-                    ForEach(model.savedNodes, id: \.id) { node in
-                        HStack(alignment: .top, spacing: 14) {
-                            Image(systemName: "gearshape.2")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(StudioPalette.greenBright)
-                                .frame(width: 28)
-
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(node.meta.label)
-                                    .font(.system(size: 14, weight: .bold))
-                                Text("\(node.meta.app) / \(node.meta.category) / \(node.runner.steps.count) step(s)")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(StudioPalette.muted)
-                                Text(node.runner.steps.map(\.primitive).joined(separator: "  ->  "))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(StudioPalette.code)
-                                    .lineLimit(2)
-                            }
-
-                            Spacer()
-
-                            Button("Load") {
-                                model.loadSavedNode(node)
-                            }
-                            .buttonStyle(PrimaryButtonStyle())
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .center, spacing: 12) {
+                        Label("Your Nodes", systemImage: "square.stack.3d.up")
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer()
+                        Button {
+                            Task { await model.refreshSavedNodes() }
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
                         }
-                        .padding(14)
-                        .background(StudioPalette.panel)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                        .buttonStyle(SecondaryButtonStyle())
+                    }
+
+                    Text("Generated executable nodes saved by the local backend. Load one to inspect, trust, and run it again.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(StudioPalette.muted)
+
+                    if model.savedNodes.isEmpty {
+                        EmptySurface(icon: "square.stack.3d.up", title: "No saved nodes yet", detail: "Generate a workflow and it will appear here.")
+                            .frame(maxWidth: .infinity, minHeight: 280)
+                    } else {
+                        ForEach(model.savedNodes, id: \.id) { node in
+                            HStack(alignment: .top, spacing: 14) {
+                                Image(systemName: "gearshape.2")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(StudioPalette.accentBright)
+                                    .frame(width: 28)
+
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(node.meta.label)
+                                        .font(.system(size: 14, weight: .bold))
+                                    Text("\(node.meta.app) / \(node.meta.category) / \(node.runner.steps.count) step(s)")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(StudioPalette.muted)
+                                    Text(node.runner.steps.map(\.primitive).joined(separator: "  ->  "))
+                                        .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                        .foregroundStyle(StudioPalette.code)
+                                        .lineLimit(2)
+                                }
+
+                                Spacer()
+
+                                Button("Load") {
+                                    model.loadSavedNode(node)
+                                }
+                                .buttonStyle(PrimaryButtonStyle())
+                            }
+                            .padding(14)
+                            .background(StudioPalette.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+                        }
                     }
                 }
+                .padding(24)
             }
-            .padding(24)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StudioPalette.canvas)
     }
 }
 
@@ -923,7 +933,7 @@ private struct EmptySurface: View {
         VStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(StudioPalette.greenBright)
+                .foregroundStyle(StudioPalette.accentBright)
             Text(title)
                 .font(.system(size: 17, weight: .semibold))
             if !detail.isEmpty {
@@ -945,141 +955,142 @@ private struct InspectorPanel: View {
     var requestAccessibility: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let node = model.selectedNode {
-                HStack {
-                    Label(node.title, systemImage: iconName(for: node.kind))
-                        .font(.system(size: 15, weight: .semibold))
-                    Spacer()
-                    Text(node.status.rawValue)
-                        .font(.system(size: 11, weight: .semibold))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(statusColor(node.status).opacity(0.18))
-                        .foregroundStyle(statusColor(node.status))
-                        .clipShape(Capsule())
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
+        ReactiveBackgroundContainer(color: StudioPalette.inspector) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let node = model.selectedNode {
+                    HStack {
+                        Label(node.title, systemImage: iconName(for: node.kind))
+                            .font(.system(size: 15, weight: .semibold))
+                        Spacer()
+                        Text(node.status.rawValue)
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(statusColor(node.status).opacity(0.18))
+                            .foregroundStyle(statusColor(node.status))
+                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 16)
 
-                Divider().overlay(StudioPalette.line)
+                    Divider().overlay(StudioPalette.line)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        InspectorSection(title: "Plain-English Summary") {
-                            Text(summary(for: node))
-                                .foregroundStyle(StudioPalette.muted)
-                                .font(.system(size: 13))
-                        }
-
-                        InspectorSection(title: "Parameters") {
-                            VStack(spacing: 8) {
-                                ForEach(node.parameters.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
-                                    ParameterRow(key: key, value: value)
-                                }
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            InspectorSection(title: "Plain-English Summary") {
+                                Text(summary(for: node))
+                                    .foregroundStyle(StudioPalette.muted)
+                                    .font(.system(size: 13))
                             }
-                        }
 
-                        InspectorSection(title: "Connections") {
-                            VStack(spacing: 8) {
-                                let visibleEdges = model.workflow.edges.filter { $0.from == node.id || $0.to == node.id }
-                                if visibleEdges.isEmpty {
-                                    Text("No manual connections yet.")
-                                        .foregroundStyle(StudioPalette.muted)
-                                        .font(.system(size: 12))
-                                } else {
-                                    ForEach(visibleEdges) { edge in
-                                        ConnectionRow(
-                                            edge: edge,
-                                            fromTitle: title(for: edge.from),
-                                            toTitle: title(for: edge.to),
-                                            remove: {
-                                                model.removeEdge(edge.id)
-                                            }
-                                        )
+                            InspectorSection(title: "Parameters") {
+                                VStack(spacing: 8) {
+                                    ForEach(node.parameters.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                                        ParameterRow(key: key, value: value)
                                     }
                                 }
                             }
-                        }
 
-                        InspectorSection(title: "Warnings") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                ForEach(model.workflow.warnings, id: \.self) { warning in
-                                    Label(warning, systemImage: "exclamationmark.triangle")
-                                        .foregroundStyle(StudioPalette.amber)
-                                        .font(.system(size: 12))
+                            InspectorSection(title: "Connections") {
+                                VStack(spacing: 8) {
+                                    let visibleEdges = model.workflow.edges.filter { $0.from == node.id || $0.to == node.id }
+                                    if visibleEdges.isEmpty {
+                                        Text("No manual connections yet.")
+                                            .foregroundStyle(StudioPalette.muted)
+                                            .font(.system(size: 12))
+                                    } else {
+                                        ForEach(visibleEdges) { edge in
+                                            ConnectionRow(
+                                                edge: edge,
+                                                fromTitle: title(for: edge.from),
+                                                toTitle: title(for: edge.to),
+                                                remove: {
+                                                    model.removeEdge(edge.id)
+                                                }
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                        }
 
-                        InspectorSection(title: "Affected Files") {
-                            VStack(spacing: 8) {
-                                ForEach(model.workflow.impacts) { item in
-                                    ImpactRow(item: item)
+                            InspectorSection(title: "Warnings") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(model.workflow.warnings, id: \.self) { warning in
+                                        Label(warning, systemImage: "exclamationmark.triangle")
+                                            .foregroundStyle(StudioPalette.amber)
+                                            .font(.system(size: 12))
+                                    }
                                 }
                             }
-                        }
 
-                        InspectorSection(title: "Raw Script") {
-                            Text(model.workflow.rawScript)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(StudioPalette.code)
-                                .padding(12)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(StudioPalette.codeBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        }
+                            InspectorSection(title: "Affected Files") {
+                                VStack(spacing: 8) {
+                                    ForEach(model.workflow.impacts) { item in
+                                        ImpactRow(item: item)
+                                    }
+                                }
+                            }
 
-                        if let output = model.workflow.executionOutput {
-                            InspectorSection(title: "Last Output") {
-                                Text(output)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(StudioPalette.greenBright)
+                            InspectorSection(title: "Raw Script") {
+                                Text(model.workflow.rawScript)
+                                    .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                    .foregroundStyle(StudioPalette.code)
                                     .padding(12)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .background(StudioPalette.codeBackground)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                            }
+
+                            if let output = model.workflow.executionOutput {
+                                InspectorSection(title: "Last Output") {
+                                    Text(output)
+                                        .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                        .foregroundStyle(StudioPalette.accentBright)
+                                        .padding(12)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .background(StudioPalette.codeBackground)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 18)
+                    }
+
+                    Divider().overlay(StudioPalette.line)
+
+                    VStack(spacing: 10) {
+                        Button(action: model.approveVersion) {
+                            Label(model.approvalRequired ? "Trust this version" : "Trusted version", systemImage: model.approvalRequired ? "touchid" : "checkmark.shield")
+                        }
+                        .buttonStyle(TrustButtonStyle(disabledLook: !model.approvalRequired))
+
+                        if compact {
+                            Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
+                            Button("Run Locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
+                            Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
+                            Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
+                        } else {
+                            HStack(spacing: 8) {
+                                Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
+                                Button("Run Locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
+                            }
+
+                            HStack(spacing: 8) {
+                                Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
+                                Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
                             }
                         }
                     }
                     .padding(.horizontal, 18)
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 16)
+                } else {
+                    EmptySurface(icon: "sidebar.right", title: "No node selected", detail: "Node settings will appear here.")
                 }
-
-                Divider().overlay(StudioPalette.line)
-
-                VStack(spacing: 10) {
-                    Button(action: model.approveVersion) {
-                        Label(model.approvalRequired ? "Trust this version" : "Trusted version", systemImage: model.approvalRequired ? "touchid" : "checkmark.shield")
-                    }
-                    .buttonStyle(TrustButtonStyle(disabledLook: !model.approvalRequired))
-
-                    if compact {
-                        Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
-                        Button("Run Locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
-                        Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
-                        Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
-                    } else {
-                        HStack(spacing: 8) {
-                            Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
-                            Button("Run Locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
-                        }
-
-                        HStack(spacing: 8) {
-                            Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
-                            Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
-                        }
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
-            } else {
-                EmptySurface(icon: "sidebar.right", title: "No node selected", detail: "Node settings will appear here.")
             }
         }
         .frame(minWidth: 260, idealWidth: compact ? 300 : 344, maxWidth: 560)
         .layoutPriority(4)
-        .background(StudioPalette.inspector)
     }
 
     private func title(for id: UUID) -> String {
@@ -1104,7 +1115,7 @@ private struct LogDrawer: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PanelBackdrop(imageName: "TerminalPanelBackground", scrimOpacity: 0.10)
+            PanelBackdrop(imageName: "TerminalPanelBackground", scrimOpacity: 0.10, scaleY: 0.7, offsetY: -90)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1120,7 +1131,7 @@ private struct LogDrawer: View {
                     VStack(spacing: 6) {
                         if model.logs.isEmpty {
                             Text("No local runs yet.")
-                                .font(.system(.caption, design: .monospaced))
+                                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                                 .foregroundStyle(StudioPalette.muted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
@@ -1135,7 +1146,7 @@ private struct LogDrawer: View {
                                     Text(log.message)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .font(.system(.caption, design: .monospaced))
+                                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                             }
                         }
                     }
@@ -1151,6 +1162,9 @@ private struct LogDrawer: View {
 
 private struct PanelBackgroundImage: View {
     var name: String
+    var scale: CGFloat = 1.0
+    var scaleY: CGFloat = 1.0
+    var offsetY: CGFloat = 0.0
 
     var body: some View {
         GeometryReader { proxy in
@@ -1158,6 +1172,8 @@ private struct PanelBackgroundImage: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
+                    .scaleEffect(x: scale, y: scale * scaleY, anchor: .center)
+                    .offset(x: 0, y: offsetY)
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
             }
@@ -1178,10 +1194,18 @@ private struct PanelBackdrop: View {
     var imageName: String
     /// Light tint so text stays readable without hiding the artwork.
     var scrimOpacity: Double
+    var scale: CGFloat = 1.0
+    var scaleY: CGFloat = 1.0
+    var offsetY: CGFloat = 0.0
 
     var body: some View {
         ZStack {
-            PanelBackgroundImage(name: imageName)
+            PanelBackgroundImage(
+                name: imageName,
+                scale: scale,
+                scaleY: scaleY,
+                offsetY: offsetY
+            )
             Color.black.opacity(scrimOpacity)
         }
         .allowsHitTesting(false)
@@ -1210,7 +1234,7 @@ private struct NodeCard: View {
                     .foregroundStyle(StudioPalette.muted)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
-                Circle()
+                RoundedRectangle(cornerRadius: 2)
                     .fill(statusColor(node.status))
                     .frame(width: 16, height: 16)
                     .overlay(Image(systemName: node.status == .warning ? "exclamationmark" : "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.black.opacity(0.7)))
@@ -1218,13 +1242,22 @@ private struct NodeCard: View {
             .padding(12)
             .frame(width: 136, height: 104)
             .background(node.status == .warning ? StudioPalette.amberSoft : StudioPalette.node)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isConnectionSource ? StudioPalette.greenBright : isSelected ? StudioPalette.greenBright : statusColor(node.status).opacity(0.7), lineWidth: (isSelected || isConnectionSource) ? 2 : 1))
-            .shadow(color: .black.opacity(isSelected ? 0.25 : 0.12), radius: isSelected ? 14 : 8, x: 0, y: 8)
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(
+                        isConnectionSource ? StudioPalette.accentBright :
+                        isSelected ? StudioPalette.accentBright :
+                        statusColor(node.status).opacity(0.7),
+                        lineWidth: (isSelected || isConnectionSource) ? 2 : 1
+                    )
+            )
+            .shadow(color: StudioPalette.accentBright.opacity(isSelected ? 0.18 : 0.0), radius: isSelected ? 16 : 0, x: 0, y: 0)
+            .shadow(color: .black.opacity(isSelected ? 0.35 : 0.18), radius: isSelected ? 14 : 8, x: 0, y: 8)
+            .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             .onTapGesture(perform: onSelect)
 
-            ConnectorButton(systemName: "arrow.right", color: StudioPalette.greenBright, action: onStartConnection)
+            ConnectorButton(systemName: "arrow.right", color: StudioPalette.accentBright, action: onStartConnection)
                 .offset(x: 76, y: 0)
                 .help("Start connection")
 
@@ -1244,8 +1277,8 @@ private struct ConnectorButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                Circle().fill(StudioPalette.canvas)
-                Circle().stroke(color.opacity(0.9), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: 3).fill(StudioPalette.canvas)
+                RoundedRectangle(cornerRadius: 3).stroke(color.opacity(0.9), lineWidth: 1.5)
                 Image(systemName: systemName)
                     .font(.system(size: 8, weight: .heavy))
                     .foregroundStyle(color)
@@ -1267,7 +1300,7 @@ private struct EdgeLine: View {
             let midX = (from.x + to.x) / 2
             path.addCurve(to: to, control1: CGPoint(x: midX, y: from.y), control2: CGPoint(x: midX, y: to.y))
         }
-        .stroke(isFallback ? StudioPalette.amber : StudioPalette.green, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: isFallback ? [5, 5] : []))
+        .stroke(isFallback ? StudioPalette.amber : StudioPalette.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: isFallback ? [5, 5] : []))
     }
 }
 
@@ -1279,8 +1312,8 @@ private struct EdgeDeleteButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                Circle().fill(StudioPalette.canvas.opacity(0.96))
-                Circle().stroke(isFallback ? StudioPalette.amber : StudioPalette.greenBright, lineWidth: isHovering ? 2 : 1.4)
+                RoundedRectangle(cornerRadius: 3).fill(StudioPalette.canvas.opacity(0.96))
+                RoundedRectangle(cornerRadius: 3).stroke(isFallback ? StudioPalette.amber : StudioPalette.accentBright, lineWidth: isHovering ? 2 : 1.4)
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .heavy))
                     .foregroundStyle(isHovering ? StudioPalette.text : StudioPalette.muted)
@@ -1293,26 +1326,185 @@ private struct EdgeDeleteButton: View {
     }
 }
 
-private struct GridBackground: View {
+// MARK: - Reactive Dotted Background
+
+private struct ReactiveBackgroundContainer<Content: View>: View {
+    @State private var mousePosition: CGPoint = .init(x: -1000, y: -1000)
+    var color: Color
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ZStack {
+            color
+            ReactiveDottedBackground(mousePosition: mousePosition)
+            content
+        }
+        .background(
+            MouseTrackingView(mouseLocation: $mousePosition)
+        )
+    }
+}
+
+private struct ReactiveDottedBackground: View {
+    var mousePosition: CGPoint
+
     var body: some View {
         Canvas { context, size in
-            let spacing: CGFloat = 18
-            var path = Path()
-            var x: CGFloat = 0
-            while x < size.width {
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
-                x += spacing
+            let dotSpacing: CGFloat = 24
+            let dotSize: CGFloat = 1.6
+
+            let columns = Int(size.width / dotSpacing) + 1
+            let rows = Int(size.height / dotSpacing) + 1
+
+            for row in 0..<rows {
+                for col in 0..<columns {
+                    let centerX = CGFloat(col) * dotSpacing
+                    let centerY = CGFloat(row) * dotSpacing
+                    let center = CGPoint(x: centerX, y: centerY)
+
+                    let dist = sqrt(pow(center.x - mousePosition.x, 2) + pow(center.y - mousePosition.y, 2))
+                    let maxDist: CGFloat = 160
+                    let intensity = max(0, 1 - (dist / maxDist))
+
+                    let scale = 1.0 + intensity * 1.8
+                    let currentSize = dotSize * scale
+
+                    let rect = CGRect(
+                        x: centerX - currentSize/2,
+                        y: centerY - currentSize/2,
+                        width: currentSize,
+                        height: currentSize
+                    )
+
+                    let opacity = 0.24 + (intensity * 0.30)
+                    context.opacity = opacity
+                    context.fill(Path(ellipseIn: rect), with: .color(StudioPalette.accent))
+                }
             }
-            var y: CGFloat = 0
-            while y < size.height {
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                y += spacing
-            }
-            context.stroke(path, with: .color(StudioPalette.grid), lineWidth: 0.35)
         }
         .allowsHitTesting(false)
+    }
+}
+
+private struct MouseTrackingView: NSViewRepresentable {
+    @Binding var mouseLocation: CGPoint
+
+    func makeNSView(context: Context) -> NSView {
+        let view = MouseView()
+        view.onLocationChange = { location in
+            self.mouseLocation = location
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    class MouseView: NSView {
+        var onLocationChange: ((CGPoint) -> Void)?
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            for area in trackingAreas {
+                removeTrackingArea(area)
+            }
+            let options: NSTrackingArea.Options = [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect]
+            let area = NSTrackingArea(rect: self.bounds, options: options, owner: self, userInfo: nil)
+            addTrackingArea(area)
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            onLocationChange?(canvasLocation(for: event))
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            onLocationChange?(canvasLocation(for: event))
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            onLocationChange?(.init(x: -1000, y: -1000))
+        }
+
+        private func canvasLocation(for event: NSEvent) -> CGPoint {
+            let location = convert(event.locationInWindow, from: nil)
+            return CGPoint(x: location.x, y: bounds.height - location.y)
+        }
+    }
+}
+
+// MARK: - Warping Spacetime Grid
+
+private struct WarpingGridBackground: View {
+    @State private var mousePosition: CGPoint = .init(x: -1000, y: -1000)
+    var nodes: [WorkflowNode]
+
+    var body: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 32
+            let cols = Int(size.width / spacing) + 1
+            let rows = Int(size.height / spacing) + 1
+            let warpStrength: CGFloat = 28.0
+            let warpRadius: CGFloat = 180.0
+            let mouseWarpStrength: CGFloat = 34.0
+            let mouseWarpRadius: CGFloat = 210.0
+
+            let nodePositions = nodes.map { CGPoint(x: $0.x + 68, y: $0.y + 52) }
+
+            func warpedPoint(_ gridX: CGFloat, _ gridY: CGFloat) -> CGPoint {
+                var dx: CGFloat = 0
+                var dy: CGFloat = 0
+                for np in nodePositions {
+                    let diffX = gridX - np.x
+                    let diffY = gridY - np.y
+                    let dist = sqrt(diffX * diffX + diffY * diffY)
+                    if dist < warpRadius && dist > 1 {
+                        let force = warpStrength * (1.0 - dist / warpRadius) * (1.0 - dist / warpRadius)
+                        dx -= (diffX / dist) * force
+                        dy -= (diffY / dist) * force
+                    }
+                }
+
+                let mouseDiffX = gridX - mousePosition.x
+                let mouseDiffY = gridY - mousePosition.y
+                let mouseDist = sqrt(mouseDiffX * mouseDiffX + mouseDiffY * mouseDiffY)
+                if mouseDist < mouseWarpRadius && mouseDist > 1 {
+                    let force = mouseWarpStrength * (1.0 - mouseDist / mouseWarpRadius) * (1.0 - mouseDist / mouseWarpRadius)
+                    dx -= (mouseDiffX / mouseDist) * force
+                    dy -= (mouseDiffY / mouseDist) * force
+                }
+
+                return CGPoint(x: gridX + dx, y: gridY + dy)
+            }
+
+            for row in 0...rows {
+                var hPath = Path()
+                let y = CGFloat(row) * spacing
+                let firstPt = warpedPoint(0, y)
+                hPath.move(to: firstPt)
+                for col in 1...cols {
+                    let x = CGFloat(col) * spacing
+                    let pt = warpedPoint(x, y)
+                    hPath.addLine(to: pt)
+                }
+                context.stroke(hPath, with: .color(StudioPalette.grid), lineWidth: 0.5)
+            }
+
+            for col in 0...cols {
+                var vPath = Path()
+                let x = CGFloat(col) * spacing
+                let firstPt = warpedPoint(x, 0)
+                vPath.move(to: firstPt)
+                for row in 1...rows {
+                    let y = CGFloat(row) * spacing
+                    let pt = warpedPoint(x, y)
+                    vPath.addLine(to: pt)
+                }
+                context.stroke(vPath, with: .color(StudioPalette.grid), lineWidth: 0.5)
+            }
+        }
+        .allowsHitTesting(false)
+        .background(
+            MouseTrackingView(mouseLocation: $mousePosition)
+        )
     }
 }
 
@@ -1322,10 +1514,10 @@ private struct MiniMap: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6).fill(.black.opacity(0.16))
-            RoundedRectangle(cornerRadius: 6).stroke(StudioPalette.line)
+            RoundedRectangle(cornerRadius: 3).fill(.black.opacity(0.25))
+            RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line)
             ForEach(nodes) { node in
-                RoundedRectangle(cornerRadius: 2)
+                RoundedRectangle(cornerRadius: 1)
                     .fill(statusColor(node.status))
                     .frame(width: 16, height: 10)
                     .position(x: node.x / 8 + 14, y: node.y / 8 + 14)
@@ -1353,8 +1545,8 @@ private struct Bubble: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: alignRight ? .trailing : .leading)
         .background(alignRight ? StudioPalette.userBubble : StudioPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
     }
 }
 
@@ -1365,7 +1557,7 @@ private struct AutomationRow: View {
 
     var body: some View {
         HStack {
-            Circle().fill(active ? StudioPalette.green : StudioPalette.muted).frame(width: 7, height: 7)
+            RoundedRectangle(cornerRadius: 1).fill(active ? StudioPalette.accent : StudioPalette.muted).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13, weight: .semibold))
                 Text(subtitle).font(.system(size: 11)).foregroundStyle(StudioPalette.muted)
@@ -1373,9 +1565,9 @@ private struct AutomationRow: View {
             Spacer()
         }
         .padding(10)
-        .background(active ? StudioPalette.greenSoft : StudioPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(active ? StudioPalette.green.opacity(0.65) : StudioPalette.line))
+        .background(active ? StudioPalette.accentSoft : StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(active ? StudioPalette.accent.opacity(0.65) : StudioPalette.line))
     }
 }
 
@@ -1387,6 +1579,7 @@ private struct InspectorSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title.uppercased())
                 .font(.system(size: 11, weight: .bold))
+                .tracking(0.5)
                 .foregroundStyle(StudioPalette.muted)
             content
         }
@@ -1402,7 +1595,7 @@ private struct ConnectionRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: edge.isFallback ? "arrow.triangle.branch" : "arrow.right")
-                .foregroundStyle(edge.isFallback ? StudioPalette.amber : StudioPalette.greenBright)
+                .foregroundStyle(edge.isFallback ? StudioPalette.amber : StudioPalette.accentBright)
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -1425,8 +1618,8 @@ private struct ConnectionRow: View {
         }
         .padding(10)
         .background(StudioPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
     }
 }
 
@@ -1443,7 +1636,7 @@ private struct ParameterRow: View {
         .font(.system(size: 12))
         .padding(10)
         .background(StudioPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
     }
 }
 
@@ -1454,13 +1647,13 @@ private struct ImpactRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(item.action.uppercased())
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(StudioPalette.greenBright)
+                .foregroundStyle(StudioPalette.accentBright)
             Text(item.source)
-                .font(.system(.caption, design: .monospaced))
+                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(item.destination)
-                .font(.system(.caption, design: .monospaced))
+                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                 .foregroundStyle(StudioPalette.muted)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -1468,7 +1661,7 @@ private struct ImpactRow: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(StudioPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
     }
 }
 
@@ -1479,7 +1672,7 @@ private struct AppIconImage: View {
                 .resizable()
                 .scaledToFill()
         } else {
-            RoundedRectangle(cornerRadius: 18).fill(StudioPalette.greenSoft)
+            RoundedRectangle(cornerRadius: 6).fill(StudioPalette.accentSoft)
                 .overlay(Image(systemName: "point.3.connected.trianglepath.dotted").font(.largeTitle))
         }
     }
@@ -1494,9 +1687,142 @@ enum AppAssets {
     }
 }
 
+enum PetAssets {
+    static var spritesheet: NSImage? {
+        guard let url = Bundle.module.url(forResource: "CurryDogSpritesheet", withExtension: "png") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }
+}
+
+// MARK: - Nex — the automation builder mascot
+
+private struct NexPetFrameView: View {
+    let col: Int
+    let row: Int
+    let scale: CGFloat
+
+    var body: some View {
+        if let image = PetAssets.spritesheet {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: 1536 * scale, height: 1872 * scale)
+                .offset(x: -CGFloat(col) * 192 * scale, y: -CGFloat(row) * 208 * scale)
+                .frame(width: 192 * scale, height: 208 * scale, alignment: .topLeading)
+                .clipped()
+        } else {
+            Color.clear
+                .frame(width: 192 * scale, height: 208 * scale)
+        }
+    }
+}
+
+private struct NexPetView: View {
+    @Bindable var model: StudioModel
+    @State private var currentFrame = 0
+    @State private var activeRow = 0
+    @State private var isWaving = false
+    @State private var waveTimer: Timer? = nil
+    @State private var isHovering = false
+
+    let timer = Timer.publish(every: 0.18, on: .main, in: .common).autoconnect()
+    let petScale: CGFloat = 0.55
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                NexPetFrameView(col: currentFrame, row: activeRow, scale: petScale)
+                    .frame(width: 192 * petScale, height: 208 * petScale)
+                    .scaleEffect(isHovering ? 1.06 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovering)
+            }
+            .frame(maxWidth: .infinity)
+            .onTapGesture {
+                isWaving = true
+                currentFrame = 0
+                activeRow = 3
+                waveTimer?.invalidate()
+                waveTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+                    isWaving = false
+                }
+            }
+            .onHover { isHovering = $0 }
+
+            Text("NEX")
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(2)
+                .foregroundStyle(StudioPalette.accentBright)
+                .padding(.top, 4)
+
+            Text(statusMessage)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(StudioPalette.text)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(StudioPalette.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(isHovering ? StudioPalette.accentBright.opacity(0.4) : StudioPalette.line, lineWidth: 1))
+                .padding(.top, 6)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(StudioPalette.panel.opacity(0.6))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(isHovering ? StudioPalette.accentBright.opacity(0.3) : StudioPalette.line.opacity(0.5), lineWidth: 1))
+        )
+        .shadow(color: StudioPalette.accentBright.opacity(isHovering ? 0.08 : 0.0), radius: 12, x: 0, y: 0)
+        .onReceive(timer) { _ in
+            let row = currentAnimationRow()
+            if row != activeRow {
+                activeRow = row
+                currentFrame = 0
+            } else {
+                currentFrame = (currentFrame + 1) % frameCount(for: row)
+            }
+        }
+    }
+
+    private var statusMessage: String {
+        if isWaving { return "Hey! I'm Nex, your automation builder. Let's create something powerful." }
+        if model.isGenerating || model.runnerStatus == "Generating" { return "Synthesizing workflow nodes locally with AI..." }
+        if model.isRunning || model.runnerStatus == "Running" { return "Executing steps locally. Watch the nodes light up." }
+        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" { return "That run hit some errors. Let's debug and retry." }
+        if model.runnerStatus == "Complete" { return "Automation complete. All steps executed successfully." }
+        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return "Workflow ready for review. Trust to authorize execution." }
+        return "Standing by. Describe what you want to automate."
+    }
+
+    private func currentAnimationRow() -> Int {
+        if isWaving { return 3 }
+        if model.isGenerating || model.runnerStatus == "Generating" { return 6 }
+        if model.isRunning || model.runnerStatus == "Running" { return 7 }
+        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" { return 5 }
+        if model.runnerStatus == "Complete" { return 4 }
+        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return 8 }
+        return 0
+    }
+
+    private func frameCount(for row: Int) -> Int {
+        switch row {
+        case 0: return 6
+        case 1, 2: return 8
+        case 3: return 4
+        case 4: return 5
+        case 5: return 8
+        case 6, 7, 8: return 6
+        default: return 6
+        }
+    }
+}
+
+// MARK: - Button Styles — Geometric / Angular
+
 private struct CanvasTabButtonStyle: ButtonStyle {
     var isSelected: Bool
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold))
@@ -1504,36 +1830,31 @@ private struct CanvasTabButtonStyle: ButtonStyle {
             .minimumScaleFactor(0.85)
             .padding(.horizontal, 6)
             .frame(height: 28)
-            .background(
-                isSelected
-                    ? StudioPalette.panelStrong.opacity(configuration.isPressed ? 0.8 : 1)
-                    : Color.clear
-            )
+            .background(isSelected ? StudioPalette.panelStrong.opacity(configuration.isPressed ? 0.8 : 1) : Color.clear)
             .foregroundStyle(isSelected ? StudioPalette.text : StudioPalette.muted)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
     }
 }
 
 private struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: 13, weight: .bold))
             .padding(.horizontal, 14)
             .frame(height: 36)
             .frame(maxWidth: .infinity)
-            .background(isEnabled ? StudioPalette.greenButton.opacity(configuration.isPressed ? 0.8 : 1) : StudioPalette.panel)
+            .background(isEnabled ? StudioPalette.accentButton.opacity(configuration.isPressed ? 0.8 : 1) : StudioPalette.panel)
             .foregroundStyle(isEnabled ? .white : StudioPalette.muted)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(isEnabled ? StudioPalette.accentBright.opacity(0.3) : .clear, lineWidth: 1))
             .opacity(isEnabled ? 1 : 0.58)
     }
 }
 
 private struct SecondaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
@@ -1542,25 +1863,24 @@ private struct SecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .background(StudioPalette.panel.opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.5))
             .foregroundStyle(isEnabled ? StudioPalette.text : StudioPalette.muted)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
             .opacity(isEnabled ? 1 : 0.58)
     }
 }
 
 private struct TrustButtonStyle: ButtonStyle {
     var disabledLook: Bool
-
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: 13, weight: .bold))
             .padding(.horizontal, 14)
             .frame(height: 38)
             .frame(maxWidth: .infinity)
-            .background(disabledLook ? StudioPalette.greenSoft.opacity(0.45) : StudioPalette.greenSoft)
-            .foregroundStyle(StudioPalette.greenBright)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.green.opacity(0.7)))
+            .background(disabledLook ? StudioPalette.accentSoft.opacity(0.45) : StudioPalette.accentSoft)
+            .foregroundStyle(StudioPalette.accentBright)
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.accent.opacity(0.7)))
     }
 }
 
@@ -1569,30 +1889,26 @@ private struct IconButtonStyle: ButtonStyle {
         configuration.label
             .frame(width: 34, height: 30)
             .background(StudioPalette.panel.opacity(configuration.isPressed ? 0.7 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+            .contentShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
     }
 }
 
 private struct StatusPill: View {
-    var label: String
-    var value: String
-    var color: Color
-
+    var label: String, value: String, color: Color
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text(label + ":")
-                .foregroundStyle(StudioPalette.muted)
+            RoundedRectangle(cornerRadius: 1).fill(color).frame(width: 7, height: 7)
+            Text(label + ":").foregroundStyle(StudioPalette.muted)
             Text(value)
         }
         .font(.system(size: 12, weight: .semibold))
         .padding(.horizontal, 10)
         .frame(height: 30)
         .background(StudioPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
     }
 }
 
@@ -1611,34 +1927,34 @@ private func iconName(for kind: NodeKind) -> String {
 private func statusColor(_ status: NodeStatus) -> Color {
     switch status {
     case .idle: return StudioPalette.muted
-    case .ready: return StudioPalette.green
+    case .ready: return StudioPalette.accent
     case .warning: return StudioPalette.amber
-    case .success: return StudioPalette.greenBright
+    case .success: return StudioPalette.accentBright
     case .blocked: return StudioPalette.red
     }
 }
 
 enum StudioPalette {
-    static let background = Color(red: 0.075, green: 0.10, blue: 0.094)
-    static let chrome = Color(red: 0.09, green: 0.12, blue: 0.112)
-    static let sidebar = Color(red: 0.06, green: 0.085, blue: 0.078)
-    static let canvas = Color(red: 0.075, green: 0.095, blue: 0.087)
-    static let inspector = Color(red: 0.09, green: 0.115, blue: 0.104)
-    static let panel = Color.white.opacity(0.075)
-    static let panelStrong = Color.white.opacity(0.11)
-    static let node = Color(red: 0.135, green: 0.17, blue: 0.155)
-    static let userBubble = Color(red: 0.16, green: 0.195, blue: 0.18)
-    static let text = Color(red: 0.95, green: 0.97, blue: 0.93)
-    static let muted = Color(red: 0.72, green: 0.76, blue: 0.71)
-    static let line = Color.white.opacity(0.17)
-    static let grid = Color.white.opacity(0.09)
-    static let green = Color(red: 0.45, green: 0.74, blue: 0.39)
-    static let greenBright = Color(red: 0.58, green: 0.86, blue: 0.49)
-    static let greenSoft = Color(red: 0.24, green: 0.40, blue: 0.24).opacity(0.42)
-    static let greenButton = Color(red: 0.34, green: 0.52, blue: 0.29)
+    static let background = Color(red: 0.055, green: 0.055, blue: 0.06)
+    static let chrome = Color(red: 0.07, green: 0.07, blue: 0.075)
+    static let sidebar = Color(red: 0.045, green: 0.045, blue: 0.05)
+    static let canvas = Color(red: 0.06, green: 0.06, blue: 0.065)
+    static let inspector = Color(red: 0.075, green: 0.075, blue: 0.08)
+    static let panel = Color.white.opacity(0.06)
+    static let panelStrong = Color.white.opacity(0.10)
+    static let node = Color(red: 0.10, green: 0.10, blue: 0.11)
+    static let userBubble = Color(red: 0.12, green: 0.12, blue: 0.13)
+    static let text = Color(red: 0.92, green: 0.93, blue: 0.94)
+    static let muted = Color(red: 0.52, green: 0.54, blue: 0.56)
+    static let line = Color.white.opacity(0.12)
+    static let grid = Color(red: 0.30, green: 0.55, blue: 0.55).opacity(0.25)
+    static let accent = Color(red: 0.70, green: 0.75, blue: 0.80)
+    static let accentBright = Color(red: 0.88, green: 0.92, blue: 0.96)
+    static let accentSoft = Color(red: 0.20, green: 0.22, blue: 0.25).opacity(0.42)
+    static let accentButton = Color(red: 0.30, green: 0.32, blue: 0.36)
     static let amber = Color(red: 0.93, green: 0.63, blue: 0.25)
     static let amberSoft = Color(red: 0.35, green: 0.25, blue: 0.12)
     static let red = Color(red: 0.92, green: 0.36, blue: 0.31)
-    static let code = Color(red: 0.75, green: 0.91, blue: 0.68)
-    static let codeBackground = Color.black.opacity(0.25)
+    static let code = Color(red: 0.72, green: 0.80, blue: 0.88)
+    static let codeBackground = Color.black.opacity(0.35)
 }
