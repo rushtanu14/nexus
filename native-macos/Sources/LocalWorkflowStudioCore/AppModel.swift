@@ -66,29 +66,37 @@ public struct GeneratedWorkflow: Codable, Equatable {
 
 @Observable
 public final class StudioModel {
-    public var prompt = "When I take screenshots, find them on my Mac, check for warning indicators, move them to the right folder, and log what happened."
+    public var prompt = ""
     public var workflow: GeneratedWorkflow
     public var selectedNodeID: UUID?
     public var pendingConnectionSourceID: UUID?
     public var logs: [RunLog]
     public var runnerStatus = "Idle"
 
-    public init(seed: Bool = true) {
-        let initialWorkflow = StudioModel.makeWorkflow(prompt: "")
-        self.workflow = initialWorkflow
-        self.selectedNodeID = initialWorkflow.nodes.first(where: { $0.kind == .reviewWarnings })?.id
+    public init(seed: Bool = false) {
+        self.workflow = StudioModel.emptyWorkflow()
+        self.selectedNodeID = nil
         self.logs = []
         if seed {
+            prompt = "When I take screenshots, find them on my Mac, check for warning indicators, move them to the right folder, and log what happened."
             generateWorkflow()
         }
     }
 
     public var selectedNode: WorkflowNode? {
-        workflow.nodes.first(where: { $0.id == selectedNodeID }) ?? workflow.nodes.first
+        workflow.nodes.first(where: { $0.id == selectedNodeID })
     }
 
     public var approvalRequired: Bool {
-        workflow.approvedSignature != signature
+        hasWorkflow && workflow.approvedSignature != signature
+    }
+
+    public var hasWorkflow: Bool {
+        !workflow.nodes.isEmpty
+    }
+
+    public var canGenerate: Bool {
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     public var moveImpacts: [ImpactItem] {
@@ -109,7 +117,17 @@ public final class StudioModel {
     }
 
     public func generateWorkflow() {
-        workflow = StudioModel.makeWorkflow(prompt: prompt)
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            workflow = StudioModel.emptyWorkflow()
+            selectedNodeID = nil
+            pendingConnectionSourceID = nil
+            runnerStatus = "Idle"
+            return
+        }
+
+        prompt = trimmedPrompt
+        workflow = StudioModel.makeWorkflow(prompt: trimmedPrompt)
         selectedNodeID = workflow.nodes.first(where: { $0.kind == .reviewWarnings })?.id
         pendingConnectionSourceID = nil
         runnerStatus = "Generated"
@@ -172,6 +190,7 @@ public final class StudioModel {
     }
 
     public func addGeneratedNode(kind: NodeKind) {
+        guard hasWorkflow else { return }
         let nextIndex = workflow.nodes.count
         let node = StudioModel.makeNode(kind: kind, x: 160 + Double((nextIndex % 4) * 176), y: 430 + Double((nextIndex / 4) * 128))
         workflow.nodes.append(node)
@@ -181,6 +200,7 @@ public final class StudioModel {
     }
 
     public func dryRun() {
+        guard hasWorkflow else { return }
         runnerStatus = "Dry run"
         logs.insert(RunLog(id: UUID(), time: Date(), node: "Dry Run", message: "Found \(moveImpacts.count) screenshots that would move", status: .ready), at: 0)
         mark(.findScreenshots, as: .success)
@@ -188,11 +208,13 @@ public final class StudioModel {
     }
 
     public func approveVersion() {
+        guard hasWorkflow else { return }
         workflow.approvedSignature = signature
         logs.insert(RunLog(id: UUID(), time: Date(), node: "Trust", message: "Trusted this exact workflow version", status: .success), at: 0)
     }
 
     public func runLocally() {
+        guard hasWorkflow else { return }
         guard !approvalRequired else {
             logs.insert(RunLog(id: UUID(), time: Date(), node: "Trust", message: "Run blocked until this version is approved", status: .blocked), at: 0)
             runnerStatus = "Blocked"
@@ -247,6 +269,21 @@ public final class StudioModel {
         }
     }
 
+    public static func emptyWorkflow() -> GeneratedWorkflow {
+        GeneratedWorkflow(
+            name: "",
+            prompt: "",
+            nodes: [],
+            edges: [],
+            warnings: [],
+            impacts: [],
+            rawScript: "",
+            approvedSignature: nil,
+            accessibilityRequested: false,
+            lastMovedFiles: []
+        )
+    }
+
     public static func makeWorkflow(prompt: String) -> GeneratedWorkflow {
         let trigger = WorkflowNode(id: UUID(), kind: .trigger, title: "Trigger", subtitle: "Screenshot folder watcher", x: 44, y: 162, status: .ready, parameters: ["Mode": "Folder Watcher", "Scope": "~/Desktop"])
         let find = WorkflowNode(id: UUID(), kind: .findScreenshots, title: "Find Screenshots", subtitle: "Match recent image files", x: 208, y: 162, status: .ready, parameters: ["Pattern": "Screenshot*.png, Screen Shot*.png", "Limit": "20"])
@@ -256,7 +293,7 @@ public final class StudioModel {
         let fallback = WorkflowNode(id: UUID(), kind: .accessibilityFallback, title: "Accessibility Fallback", subtitle: "Ask only if needed", x: 372, y: 346, status: .idle, parameters: ["Permission": "Not requested", "Stop Hotkey": "Control + Escape"])
 
         return GeneratedWorkflow(
-            name: "Screenshot Warning Sorter",
+            name: workflowName(from: prompt),
             prompt: prompt,
             nodes: [trigger, find, review, move, log, fallback],
             edges: [
@@ -285,5 +322,17 @@ public final class StudioModel {
             accessibilityRequested: false,
             lastMovedFiles: []
         )
+    }
+
+    private static func workflowName(from prompt: String) -> String {
+        let words = prompt
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .prefix(4)
+            .map { word in
+                word.prefix(1).uppercased() + word.dropFirst().lowercased()
+            }
+            .joined(separator: " ")
+
+        return words.isEmpty ? "Generated Workflow" : words
     }
 }

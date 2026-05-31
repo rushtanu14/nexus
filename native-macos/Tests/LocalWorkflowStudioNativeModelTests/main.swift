@@ -3,6 +3,8 @@ import LocalWorkflowStudioCore
 @main
 struct ModelTestRunner {
     static func main() {
+        testAppStartsEmpty()
+        testGenerateRequiresPrompt()
         testGenerateWorkflowCreatesNodeCanvas()
         testDryRunMarksReviewAndWritesLog()
         testApprovalBlocksAndThenAllowsRun()
@@ -12,10 +14,34 @@ struct ModelTestRunner {
         print("LocalWorkflowStudioNativeModelTests passed")
     }
 
-    static func testGenerateWorkflowCreatesNodeCanvas() {
-        let model = StudioModel(seed: false)
-        model.prompt = "Sort screenshots and check warnings"
+    static func testAppStartsEmpty() {
+        let model = StudioModel()
+        precondition(model.prompt.isEmpty)
+        precondition(model.workflow.nodes.isEmpty)
+        precondition(model.workflow.edges.isEmpty)
+        precondition(model.workflow.rawScript.isEmpty)
+        precondition(model.logs.isEmpty)
+        precondition(model.runnerStatus == "Idle")
+        precondition(model.selectedNode == nil)
+    }
+
+    static func testGenerateRequiresPrompt() {
+        let model = StudioModel()
         model.generateWorkflow()
+        precondition(model.workflow.nodes.isEmpty)
+        precondition(model.logs.isEmpty)
+        precondition(model.runnerStatus == "Idle")
+    }
+
+    static func generatedModel(prompt: String = "Sort screenshots and check warnings") -> StudioModel {
+        let model = StudioModel()
+        model.prompt = prompt
+        model.generateWorkflow()
+        return model
+    }
+
+    static func testGenerateWorkflowCreatesNodeCanvas() {
+        let model = generatedModel()
         precondition(model.workflow.nodes.count == 6)
         precondition(model.workflow.edges.count == 5)
         precondition(model.workflow.nodes.contains(where: { $0.kind == .trigger }))
@@ -24,8 +50,7 @@ struct ModelTestRunner {
     }
 
     static func testDryRunMarksReviewAndWritesLog() {
-        let model = StudioModel(seed: false)
-        model.generateWorkflow()
+        let model = generatedModel()
         model.dryRun()
         let review = model.workflow.nodes.first(where: { $0.kind == .reviewWarnings })
         precondition(review?.status == .warning)
@@ -34,8 +59,7 @@ struct ModelTestRunner {
     }
 
     static func testApprovalBlocksAndThenAllowsRun() {
-        let model = StudioModel(seed: false)
-        model.generateWorkflow()
+        let model = generatedModel()
         precondition(model.approvalRequired)
         model.runLocally()
         precondition(model.runnerStatus == "Blocked")
@@ -49,8 +73,7 @@ struct ModelTestRunner {
     }
 
     static func testChangingScriptInvalidatesApproval() {
-        let model = StudioModel(seed: false)
-        model.generateWorkflow()
+        let model = generatedModel()
         model.approveVersion()
         precondition(!model.approvalRequired)
         model.workflow.rawScript += "\necho changed"
@@ -58,8 +81,7 @@ struct ModelTestRunner {
     }
 
     static func testCanvasEditingInvalidatesApproval() {
-        let model = StudioModel(seed: false)
-        model.generateWorkflow()
+        let model = generatedModel()
         model.approveVersion()
         precondition(!model.approvalRequired)
 
@@ -91,8 +113,7 @@ struct ModelTestRunner {
     }
 
     static func testUndoAndAccessibilityPrompt() {
-        let model = StudioModel(seed: false)
-        model.generateWorkflow()
+        let model = generatedModel()
         model.approveVersion()
         model.runLocally()
         model.undoLastRun()
