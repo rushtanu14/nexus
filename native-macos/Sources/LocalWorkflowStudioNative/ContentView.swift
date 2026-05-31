@@ -520,91 +520,127 @@ private struct PromptPanel: View {
     }
 }
 
+private enum CanvasTab: String, CaseIterable, Identifiable {
+    case canvas = "Canvas"
+    case code = "Code"
+    case runs = "Runs"
+
+    var id: String { rawValue }
+
+    var guidance: String {
+        switch self {
+        case .canvas: return "Drag nodes. Connect output dots to input dots."
+        case .code: return "Inspect the generated local script before approving."
+        case .runs: return "Review local dry runs, approvals, runs, and undo history."
+        }
+    }
+
+    func metricValue(compact: Bool, logCount: Int) -> String {
+        switch self {
+        case .canvas: return compact ? "66%" : "100%"
+        case .code: return "Script"
+        case .runs: return "\(logCount)"
+        }
+    }
+}
+
 private struct CanvasPanel: View {
     @Bindable var model: StudioModel
     var compact: Bool
     @State private var dragOrigins: [UUID: CGPoint] = [:]
+    @State private var selectedTab: CanvasTab = .canvas
 
     var body: some View {
         let scale: CGFloat = compact ? 0.66 : 1
 
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Picker("", selection: .constant("Canvas")) {
-                    Text("Canvas").tag("Canvas")
-                    Text("Code").tag("Code")
-                    Text("Runs").tag("Runs")
+                Picker("", selection: $selectedTab) {
+                    ForEach(CanvasTab.allCases) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .frame(width: compact ? 184 : 220)
                 Spacer()
-                Text(model.pendingConnectionSourceID == nil ? "Drag nodes. Connect output dots to input dots." : "Choose an input dot to finish the connection.")
+                Text(model.pendingConnectionSourceID == nil ? selectedTab.guidance : "Choose an input dot to finish the connection.")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(model.pendingConnectionSourceID == nil ? StudioPalette.muted : StudioPalette.greenBright)
                     .lineLimit(1)
-                StatusPill(label: "Zoom", value: compact ? "66%" : "100%", color: StudioPalette.muted)
+                StatusPill(
+                    label: selectedTab == .canvas ? "Zoom" : selectedTab.rawValue,
+                    value: selectedTab.metricValue(compact: compact, logCount: model.logs.count),
+                    color: selectedTab == .runs ? StudioPalette.green : StudioPalette.muted
+                )
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
 
             GeometryReader { proxy in
-                ZStack(alignment: .topLeading) {
-                    GridBackground()
+                switch selectedTab {
+                case .canvas:
+                    ZStack(alignment: .topLeading) {
+                        GridBackground()
 
-                    ForEach(model.workflow.edges) { edge in
-                        if let from = model.workflow.nodes.first(where: { $0.id == edge.from }),
-                           let to = model.workflow.nodes.first(where: { $0.id == edge.to }) {
-                            let fromPoint = nodeCenter(from, scale: scale)
-                            let toPoint = nodeCenter(to, scale: scale)
+                        ForEach(model.workflow.edges) { edge in
+                            if let from = model.workflow.nodes.first(where: { $0.id == edge.from }),
+                               let to = model.workflow.nodes.first(where: { $0.id == edge.to }) {
+                                let fromPoint = nodeCenter(from, scale: scale)
+                                let toPoint = nodeCenter(to, scale: scale)
 
-                            EdgeLine(from: fromPoint, to: toPoint, isFallback: edge.isFallback)
+                                EdgeLine(from: fromPoint, to: toPoint, isFallback: edge.isFallback)
 
-                            EdgeDeleteButton(isFallback: edge.isFallback) {
-                                model.removeEdge(edge.id)
+                                EdgeDeleteButton(isFallback: edge.isFallback) {
+                                    model.removeEdge(edge.id)
+                                }
+                                .position(edgeDeletePoint(from: fromPoint, to: toPoint))
+                                .help("Delete connection")
                             }
-                            .position(edgeDeletePoint(from: fromPoint, to: toPoint))
-                            .help("Delete connection")
                         }
-                    }
 
-                    ForEach(model.workflow.nodes) { node in
-                        NodeCard(
-                            node: node,
-                            isSelected: model.selectedNodeID == node.id,
-                            isConnectionSource: model.pendingConnectionSourceID == node.id,
-                            onSelect: {
-                                model.select(node)
-                            },
-                            onStartConnection: {
-                                model.beginConnection(from: node.id)
-                            },
-                            onFinishConnection: {
-                                model.completeConnection(to: node.id)
+                        ForEach(model.workflow.nodes) { node in
+                            NodeCard(
+                                node: node,
+                                isSelected: model.selectedNodeID == node.id,
+                                isConnectionSource: model.pendingConnectionSourceID == node.id,
+                                onSelect: {
+                                    model.select(node)
+                                },
+                                onStartConnection: {
+                                    model.beginConnection(from: node.id)
+                                },
+                                onFinishConnection: {
+                                    model.completeConnection(to: node.id)
+                                }
+                            )
+                            .scaleEffect(scale)
+                            .position(nodeCenter(node, scale: scale))
+                            .simultaneousGesture(nodeDragGesture(for: node, scale: scale))
+                        }
+
+                        if let sourceID = model.pendingConnectionSourceID,
+                           let source = model.workflow.nodes.first(where: { $0.id == sourceID }) {
+                            ZStack {
+                                Circle().fill(StudioPalette.green.opacity(0.16))
+                                Circle().stroke(StudioPalette.greenBright, lineWidth: 2)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(StudioPalette.greenBright)
                             }
-                        )
-                        .scaleEffect(scale)
-                        .position(nodeCenter(node, scale: scale))
-                        .simultaneousGesture(nodeDragGesture(for: node, scale: scale))
-                    }
-
-                    if let sourceID = model.pendingConnectionSourceID,
-                       let source = model.workflow.nodes.first(where: { $0.id == sourceID }) {
-                        ZStack {
-                            Circle().fill(StudioPalette.green.opacity(0.16))
-                            Circle().stroke(StudioPalette.greenBright, lineWidth: 2)
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(StudioPalette.greenBright)
+                            .frame(width: 42 * scale, height: 42 * scale)
+                            .position(x: nodeCenter(source, scale: scale).x + 94 * scale, y: nodeCenter(source, scale: scale).y)
                         }
-                        .frame(width: 42 * scale, height: 42 * scale)
-                        .position(x: nodeCenter(source, scale: scale).x + 94 * scale, y: nodeCenter(source, scale: scale).y)
-                    }
 
-                    MiniMap(nodes: model.workflow.nodes, edges: model.workflow.edges)
-                        .position(x: 108, y: proxy.size.height - 84)
+                        MiniMap(nodes: model.workflow.nodes, edges: model.workflow.edges)
+                            .position(x: 108, y: proxy.size.height - 84)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipShape(Rectangle())
+                case .code:
+                    CodeSurface(model: model)
+                case .runs:
+                    RunsSurface(model: model)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipShape(Rectangle())
             }
         }
         .frame(minWidth: compact ? 500 : 650)
@@ -634,6 +670,115 @@ private struct CanvasPanel: View {
             .onEnded { _ in
                 dragOrigins[node.id] = nil
             }
+    }
+}
+
+private struct CodeSurface: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .center, spacing: 12) {
+                    Label("Generated Local Script", systemImage: "chevron.left.forwardslash.chevron.right")
+                        .font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                    StatusPill(
+                        label: "Trust",
+                        value: model.approvalRequired ? "Review" : "Trusted",
+                        color: model.approvalRequired ? StudioPalette.amber : StudioPalette.green
+                    )
+                }
+
+                Text(model.workflow.rawScript)
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(StudioPalette.code)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(StudioPalette.codeBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                    .textSelection(.enabled)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Warnings".uppercased())
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(StudioPalette.muted)
+
+                    ForEach(model.workflow.warnings, id: \.self) { warning in
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(StudioPalette.amber)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(StudioPalette.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                    }
+                }
+
+                Text("Raw scripts are visible for inspection. Nexus still uses dry-run and trust approval gates before a local run.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(StudioPalette.muted)
+            }
+            .padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(StudioPalette.canvas)
+    }
+}
+
+private struct RunsSurface: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 12) {
+                    Label("Local Run Timeline", systemImage: "clock.arrow.circlepath")
+                        .font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                    StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.green)
+                }
+
+                if model.logs.isEmpty {
+                    Text("No local activity yet.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(StudioPalette.muted)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(StudioPalette.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                } else {
+                    ForEach(model.logs) { log in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(log.node)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(statusColor(log.status))
+                                Text(log.time, style: .time)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(StudioPalette.muted)
+                            }
+                            .frame(width: 96, alignment: .leading)
+
+                            Text(log.message)
+                                .font(.system(size: 13))
+                                .foregroundStyle(StudioPalette.text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(12)
+                        .background(StudioPalette.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(StudioPalette.canvas)
     }
 }
 
