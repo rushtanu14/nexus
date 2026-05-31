@@ -83,8 +83,8 @@ private struct TitleBar: View {
                     .tracking(2)
                     .foregroundStyle(StudioPalette.text)
                 Spacer()
-                StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.accent)
-                StatusPill(label: "Permissions", value: model.workflow.accessibilityRequested ? "Requested" : "Local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.accent)
+                StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
+                StatusPill(label: "permissions", value: model.workflow.accessibilityRequested ? "requested" : "local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.accent)
                 Button(action: onOpenWalkthrough) {
                     Image(systemName: "questionmark.circle")
                 }
@@ -395,10 +395,10 @@ private struct Sidebar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, compact ? 2 : 10)
 
-                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "Workflows", active: true, compact: compact)
-                SidebarButton(icon: "square.stack.3d.up", label: "Your Nodes", active: false, compact: compact)
-                SidebarButton(icon: "clock", label: "Runs", active: false, compact: compact)
-                SidebarButton(icon: "gearshape", label: "Settings", active: false, compact: compact)
+                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "workflows", active: true, compact: compact)
+                SidebarButton(icon: "square.stack.3d.up", label: "your nodes", active: false, compact: compact)
+                SidebarButton(icon: "clock", label: "runs", active: false, compact: compact)
+                SidebarButton(icon: "gearshape", label: "settings", active: false, compact: compact)
 
                 Spacer()
 
@@ -406,12 +406,12 @@ private struct Sidebar: View {
                     Image(systemName: "circle.fill")
                         .foregroundStyle(StudioPalette.accent)
                         .frame(maxWidth: .infinity)
-                        .help("Runner Local")
+                        .help("runner local")
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("Runner Local", systemImage: "circle.fill")
+                        Label("runner local", systemImage: "circle.fill")
                             .foregroundStyle(StudioPalette.accent)
-                        Text("Workspace")
+                        Text("workspace")
                             .foregroundStyle(StudioPalette.muted)
                         Text("~/Workflow Studio")
                             .foregroundStyle(StudioPalette.accent)
@@ -473,9 +473,9 @@ private struct PromptPanel: View {
         ReactiveBackgroundContainer(color: StudioPalette.background) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Ask AI to build a workflow")
+                    Text("ask AI to build a workflow")
                         .font(.system(size: 16, weight: .bold))
-                    Text("Generated locally with Ollama.")
+                    Text("generated locally with Ollama.")
                         .font(.system(size: 12))
                         .foregroundStyle(StudioPalette.muted)
                 }
@@ -494,11 +494,11 @@ private struct PromptPanel: View {
                         .padding(10)
 
                     if model.prompt.isEmpty {
-                        Text("Paste the automation you want Nexus to build.")
+                        Text("describe the automation you want Nex to build.")
                             .font(.system(size: 13))
                             .foregroundStyle(StudioPalette.muted)
                             .padding(.horizontal, 15)
-                            .padding(.vertical, 18)
+                            .padding(.top, 12)
                             .allowsHitTesting(false)
                     }
                 }
@@ -509,19 +509,19 @@ private struct PromptPanel: View {
 
                 HStack {
                     Button(action: model.generateWorkflow) {
-                        Label("Generate canvas", systemImage: "wand.and.sparkles")
+                        Label("generate canvas", systemImage: "wand.and.sparkles")
                     }
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(!model.canGenerate)
                     Button(action: model.dryRun) {
-                        Label("Dry run", systemImage: "play")
+                        Label("dry run", systemImage: "play")
                     }
                     .buttonStyle(SecondaryButtonStyle())
                     .disabled(!model.hasWorkflow)
                 }
 
                 if model.hasWorkflow {
-                    Text("Current automation")
+                    Text("current automation")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(StudioPalette.muted)
                         .padding(.top, 4)
@@ -531,7 +531,7 @@ private struct PromptPanel: View {
 
                 if let output = model.workflow.executionOutput {
                     VStack(alignment: .leading, spacing: 7) {
-                        Label("Task completed", systemImage: "checkmark.circle.fill")
+                        Label("task completed", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(StudioPalette.accentBright)
                         Text(output)
@@ -559,10 +559,10 @@ private struct PromptPanel: View {
 }
 
 private enum CanvasTab: String, CaseIterable, Identifiable {
-    case canvas = "Canvas"
-    case code = "Code"
-    case runs = "Runs"
-    case nodes = "Your Nodes"
+    case canvas = "canvas"
+    case code = "code"
+    case runs = "runs"
+    case nodes = "your nodes"
 
     var id: String { rawValue }
 
@@ -618,7 +618,7 @@ private struct CanvasPanel: View {
                     .foregroundStyle(model.pendingConnectionSourceID == nil ? StudioPalette.muted : StudioPalette.accentBright)
                     .lineLimit(1)
                 StatusPill(
-                    label: selectedTab == .canvas ? "Zoom" : selectedTab.rawValue,
+                    label: selectedTab == .canvas ? "zoom" : selectedTab.rawValue,
                     value: selectedTab.metricValue(compact: compact, logCount: model.logs.count),
                     color: selectedTab == .runs ? StudioPalette.accent : StudioPalette.muted
                 )
@@ -759,12 +759,12 @@ private struct CodeSurface: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 18) {
                             HStack(alignment: .center, spacing: 12) {
-                                Label("Generated Local Script", systemImage: "chevron.left.forwardslash.chevron.right")
+                                Label("generated local script", systemImage: "chevron.left.forwardslash.chevron.right")
                                     .font(.system(size: 16, weight: .semibold))
                                 Spacer()
                                 StatusPill(
-                                    label: "Trust",
-                                    value: model.approvalRequired ? "Review" : "Trusted",
+                                    label: "trust",
+                                    value: model.approvalRequired ? "review" : "trusted",
                                     color: model.approvalRequired ? StudioPalette.amber : StudioPalette.accent
                                 )
                             }
@@ -818,10 +818,10 @@ private struct RunsSurface: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
-                        Label("Local Run Timeline", systemImage: "clock.arrow.circlepath")
+                        Label("local run timeline", systemImage: "clock.arrow.circlepath")
                             .font(.system(size: 16, weight: .semibold))
                         Spacer()
-                        StatusPill(label: "Runner", value: model.runnerStatus, color: StudioPalette.accent)
+                        StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
                     }
 
                     if model.logs.isEmpty {
@@ -866,13 +866,13 @@ private struct NodesSurface: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
-                        Label("Your Nodes", systemImage: "square.stack.3d.up")
+                        Label("your nodes", systemImage: "square.stack.3d.up")
                             .font(.system(size: 16, weight: .semibold))
                         Spacer()
                         Button {
                             Task { await model.refreshSavedNodes() }
                         } label: {
-                            Label("Refresh", systemImage: "arrow.clockwise")
+                            Label("refresh", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(SecondaryButtonStyle())
                     }
@@ -1061,24 +1061,24 @@ private struct InspectorPanel: View {
 
                     VStack(spacing: 10) {
                         Button(action: model.approveVersion) {
-                            Label(model.approvalRequired ? "Trust this version" : "Trusted version", systemImage: model.approvalRequired ? "touchid" : "checkmark.shield")
+                            Label(model.approvalRequired ? "trust this version" : "trusted version", systemImage: model.approvalRequired ? "touchid" : "checkmark.shield")
                         }
                         .buttonStyle(TrustButtonStyle(disabledLook: !model.approvalRequired))
 
                         if compact {
-                            Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
-                            Button("Run Locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
-                            Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
-                            Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
+                            Button("dry run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
+                            Button("run locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
+                            Button("undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
+                            Button("request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
                         } else {
                             HStack(spacing: 8) {
-                                Button("Dry Run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
-                                Button("Run Locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
+                                Button("dry run", action: model.dryRun).buttonStyle(SecondaryButtonStyle())
+                                Button("run locally", action: model.runLocally).buttonStyle(PrimaryButtonStyle())
                             }
 
                             HStack(spacing: 8) {
-                                Button("Undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
-                                Button("Request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
+                                Button("undo", action: model.undoLastRun).buttonStyle(SecondaryButtonStyle())
+                                Button("request Accessibility", action: requestAccessibility).buttonStyle(SecondaryButtonStyle())
                             }
                         }
                     }
@@ -1120,7 +1120,7 @@ private struct LogDrawer: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Local Run Logs")
+                    Text("local run logs")
                         .font(.system(size: 13, weight: .semibold))
                     Spacer()
                     Text("Stored locally")
