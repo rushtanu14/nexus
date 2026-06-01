@@ -189,10 +189,150 @@ public struct EngineRunResult: Codable, Equatable, Sendable {
     }
 }
 
+public struct LifePlanStats: Codable, Equatable, Sendable {
+    public var tasks: Int
+    public var resources: Int
+    public var questions: Int
+    public var automations: Int
+
+    public init(tasks: Int, resources: Int, questions: Int, automations: Int) {
+        self.tasks = tasks
+        self.resources = resources
+        self.questions = questions
+        self.automations = automations
+    }
+}
+
+public struct LifeTask: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var status: String
+    public var dueDateText: String
+    public var priority: String
+    public var source: String
+
+    public init(id: String, title: String, status: String, dueDateText: String, priority: String, source: String) {
+        self.id = id
+        self.title = title
+        self.status = status
+        self.dueDateText = dueDateText
+        self.priority = priority
+        self.source = source
+    }
+}
+
+public struct LifeResource: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var url: String
+    public var type: String
+
+    public init(id: String, title: String, url: String, type: String) {
+        self.id = id
+        self.title = title
+        self.url = url
+        self.type = type
+    }
+}
+
+public struct LifeQuestion: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var text: String
+
+    public init(id: String, text: String) {
+        self.id = id
+        self.text = text
+    }
+}
+
+public struct LifeNextMeeting: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var dateText: String
+    public var timeText: String
+    public var source: String
+
+    public init(id: String, title: String, dateText: String, timeText: String, source: String) {
+        self.id = id
+        self.title = title
+        self.dateText = dateText
+        self.timeText = timeText
+        self.source = source
+    }
+}
+
+public struct LifeAutomation: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var intent: String
+    public var impact: String
+    public var riskLevel: String
+    public var requiresApproval: Bool
+
+    public init(id: String, title: String, intent: String, impact: String, riskLevel: String, requiresApproval: Bool) {
+        self.id = id
+        self.title = title
+        self.intent = intent
+        self.impact = impact
+        self.riskLevel = riskLevel
+        self.requiresApproval = requiresApproval
+    }
+}
+
+public struct LifePlan: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var date: String
+    public var context: String
+    public var brief: String
+    public var sourceText: String
+    public var stats: LifePlanStats
+    public var tasks: [LifeTask]
+    public var resources: [LifeResource]
+    public var questions: [LifeQuestion]
+    public var nextMeeting: LifeNextMeeting?
+    public var automations: [LifeAutomation]
+    public var warnings: [String]
+    public var rawSummary: String
+
+    public init(
+        id: String,
+        title: String,
+        date: String,
+        context: String,
+        brief: String,
+        sourceText: String,
+        stats: LifePlanStats,
+        tasks: [LifeTask],
+        resources: [LifeResource],
+        questions: [LifeQuestion],
+        nextMeeting: LifeNextMeeting?,
+        automations: [LifeAutomation],
+        warnings: [String],
+        rawSummary: String
+    ) {
+        self.id = id
+        self.title = title
+        self.date = date
+        self.context = context
+        self.brief = brief
+        self.sourceText = sourceText
+        self.stats = stats
+        self.tasks = tasks
+        self.resources = resources
+        self.questions = questions
+        self.nextMeeting = nextMeeting
+        self.automations = automations
+        self.warnings = warnings
+        self.rawSummary = rawSummary
+    }
+}
+
 public protocol WorkflowEngineClientProtocol: Sendable {
     func generateNode(intent: String, context: [String: JSONValue]) async throws -> ExecutableNode
     func runNode(_ node: ExecutableNode, context: [String: JSONValue]) async throws -> EngineRunResult
     func listNodes() async throws -> [ExecutableNode]
+    func createLifePlan(text: String) async throws -> LifePlan
 }
 
 public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
@@ -216,6 +356,10 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
             throw EngineClientError.requestFailed(String(data: data, encoding: .utf8) ?? "Request failed")
         }
         return try JSONDecoder().decode([ExecutableNode].self, from: data)
+    }
+
+    public func createLifePlan(text: String) async throws -> LifePlan {
+        try await request(path: "/life/plan", body: LifePlanRequest(text: text), response: LifePlan.self)
     }
 
     private func request<Request: Encodable, Response: Decodable>(path: String, body: Request, response: Response.Type) async throws -> Response {
@@ -246,6 +390,10 @@ private struct GenerateRequest: Encodable {
 private struct RunRequest: Encodable {
     var node: ExecutableNode
     var context: [String: JSONValue]
+}
+
+private struct LifePlanRequest: Encodable {
+    var text: String
 }
 
 private struct ErrorResponse: Decodable {
@@ -321,6 +469,8 @@ public final class StudioModel {
     public var runnerStatus = "Idle"
     public var isGenerating = false
     public var isRunning = false
+    public var isPlanning = false
+    public var lifePlan: LifePlan?
     public var savedNodes: [ExecutableNode] = []
     private let engineClient: any WorkflowEngineClientProtocol
 
@@ -337,6 +487,8 @@ public final class StudioModel {
     public var selectedNode: WorkflowNode? { workflow.nodes.first(where: { $0.id == selectedNodeID }) }
     public var hasWorkflow: Bool { !workflow.nodes.isEmpty }
     public var canGenerate: Bool { !isGenerating && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    public var canCreateLifePlan: Bool { !isPlanning && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    public var topAutomationIntent: String? { lifePlan?.automations.first?.intent }
     public var approvalRequired: Bool { hasWorkflow && workflow.approvedSignature != signature }
     public var moveImpacts: [ImpactItem] { workflow.impacts.filter { $0.action.lowercased() == "move" } }
     public var signature: String {
@@ -347,6 +499,54 @@ public final class StudioModel {
 
     public func generateWorkflow() {
         Task { await generateWorkflowFromBackend() }
+    }
+
+    public func createLifePlan() {
+        Task { await createLifePlanFromBackend() }
+    }
+
+    public func createLifePlanFromBackend() async {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty else {
+            lifePlan = nil
+            runnerStatus = "Idle"
+            return
+        }
+
+        prompt = trimmedPrompt
+        isPlanning = true
+        runnerStatus = "Planning"
+        defer { isPlanning = false }
+        do {
+            let plan = try await engineClient.createLifePlan(text: trimmedPrompt)
+            lifePlan = plan
+            runnerStatus = "Plan ready"
+            log(node: "Life AI", message: "Prepared \(plan.tasks.count) task(s), \(plan.questions.count) question(s), and \(plan.automations.count) automation suggestion(s)", status: .success)
+        } catch {
+            runnerStatus = "Planning failed"
+            log(node: "Life AI", message: error.localizedDescription, status: .blocked)
+        }
+    }
+
+    public func buildWorkflowFromLifePlan() {
+        Task { await buildWorkflowFromLifePlanFromBackend() }
+    }
+
+    public func buildWorkflowFromLifePlanFromBackend() async {
+        guard let automation = lifePlan?.automations.first else {
+            log(node: "Life AI", message: "No suggested automation is available yet", status: .blocked)
+            return
+        }
+        await buildWorkflowFromAutomation(automation)
+    }
+
+    public func buildWorkflow(from automation: LifeAutomation) {
+        Task { await buildWorkflowFromAutomation(automation) }
+    }
+
+    public func buildWorkflowFromAutomation(_ automation: LifeAutomation) async {
+        prompt = automation.intent
+        await generateWorkflowFromBackend()
     }
 
     public func generateWorkflowFromBackend() async {

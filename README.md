@@ -9,6 +9,15 @@
 
 # dev notes
 
+## branch concept
+
+`codex/relay-nexus-life-assistant` turns Nexus into a personal command center:
+paste one block of meeting notes, school tasks, errands, links, or messy plans,
+then Nexus produces a Relay-style command brief with tasks, questions, resources,
+next-meeting context, and suggested local automations. Those suggestions still
+flow through the Nexus canvas, dry run, raw-script review, and trust gates before
+anything runs on the Mac.
+
 ## repo
 
 ```text

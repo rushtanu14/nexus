@@ -4,6 +4,7 @@ import http from "node:http";
 import test from "node:test";
 import { executeNode } from "../src/executor.js";
 import { configureGenerator, generateNode, getGenerationCount, resetGenerationCount } from "../src/generator.js";
+import { createLifePlan } from "../src/life-assistant.js";
 import { clearServers, registerServer, scrapeServer } from "../src/mcp-registry.js";
 import { validateNode, validateSchema } from "../src/node-schema.js";
 import { clearNodes, findNode, saveNode } from "../src/node-store.js";
@@ -123,6 +124,60 @@ test("api: generated nodes are returned from the local server", async () => {
     const node = await response.json();
     assert.equal(response.status, 200);
     assert(validateSchema(node));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("life: pasted meeting notes produce a command plan", () => {
+  const plan = createLifePlan(`Meeting title: Class officer planning
+Date: 2026-06-01
+
+Context:
+Plan homecoming prep, committee assignments, and follow-up logistics.
+
+Resources:
+Signup sheet: https://example.com/signup
+
+Questions:
+Who owns the final decoration budget?
+
+Due dates:
+Finish the signup cleanup by tomorrow
+
+Next meeting:
+June 3, 2026 at 4:30 PM
+
+Meeting minutes:
+I need to send the committee recap by tomorrow.
+Prepare the homecoming task list before Friday.`);
+
+  assert.equal(plan.title, "Class officer planning");
+  assert.equal(plan.stats.tasks, 3);
+  assert.equal(plan.resources[0].url, "https://example.com/signup");
+  assert(plan.questions.some((question) => question.text.includes("decoration budget")));
+  assert.equal(plan.nextMeeting.dateText, "June 3, 2026");
+  assert(plan.automations[0].intent.includes("write a string"));
+  assert(plan.automations.some((automation) => automation.id === "automation-open-resource"));
+  assert(plan.warnings.some((warning) => warning.includes("dry run")));
+});
+
+test("api: life plan endpoint returns suggested automations", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/life/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "Title: Weekly reset\nTasks:\n- Review calendar by tonight\nQuestions:\nWhat should move to next week?" })
+    });
+    const plan = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(plan.title, "Weekly reset");
+    assert.equal(plan.stats.tasks, 1);
+    assert(plan.automations.length >= 1);
+    assert.equal(plan.automations[0].requiresApproval, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

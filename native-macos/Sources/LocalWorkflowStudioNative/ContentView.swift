@@ -78,11 +78,12 @@ private struct TitleBar: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 12) {
-                Text("NEXUS")
+                Text("NEXUS LIFE")
                     .font(.system(size: 14, weight: .heavy, design: .default))
-                    .tracking(2)
+                    .tracking(1.2)
                     .foregroundStyle(StudioPalette.text)
                 Spacer()
+                StatusPill(label: "assistant", value: model.lifePlan == nil ? "listening" : "briefed", color: model.lifePlan == nil ? StudioPalette.muted : StudioPalette.accent)
                 StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
                 StatusPill(label: "permissions", value: model.workflow.accessibilityRequested ? "requested" : "local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.accent)
                 Button(action: onOpenWalkthrough) {
@@ -134,19 +135,19 @@ private struct WalkthroughStep: Identifiable {
         WalkthroughStep(
             id: "prompt",
             icon: "wand.and.sparkles",
-            title: "Describe the automation",
-            detail: "Start with plain English. Nexus turns the request into a local workflow canvas instead of making you build every node by hand.",
+            title: "Paste your life context",
+            detail: "Start with meeting notes, school tasks, errands, links, or messy plans. Nexus turns the intake into a command brief before building any workflow.",
             checks: [
-                "Use the prompt box for the goal",
-                "Generate canvas to refresh the graph",
-                "The generated script stays visible before running"
+                "Paste one block of context",
+                "Plan Life creates the brief",
+                "Build Workflow converts one suggestion into a canvas"
             ]
         ),
         WalkthroughStep(
             id: "canvas",
             icon: "point.3.connected.trianglepath.dotted",
-            title: "Edit the node canvas",
-            detail: "The canvas works like an n8n-style editor: drag nodes around, connect output dots to input dots, and click the small x on a wire to delete a connection.",
+            title: "Edit the control canvas",
+            detail: "The canvas works like an n8n-style editor for the automations you approve: drag nodes around, connect outputs to inputs, and delete wires directly.",
             checks: [
                 "Drag a node to reorganize the flow",
                 "Use right-side dots to start connections",
@@ -157,7 +158,7 @@ private struct WalkthroughStep: Identifiable {
             id: "review",
             icon: "checkmark.shield",
             title: "Dry run, then trust",
-            detail: "Nexus blocks execution until the exact workflow version is trusted. If you move nodes, change wires, or change scripts, approval is required again.",
+            detail: "Nexus blocks execution until the exact workflow version is trusted. If your assistant plan changes scripts, permissions, or wires, approval is required again.",
             checks: [
                 "Dry Run shows impact first",
                 "Warnings explain risks simply",
@@ -384,10 +385,10 @@ private struct Sidebar: View {
                         .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 12, style: .continuous))
                         .shadow(color: StudioPalette.accentBright.opacity(0.15), radius: 18, x: 0, y: 12)
                     if !compact {
-                        Text("NEXUS")
+                        Text("NEXUS LIFE")
                             .font(.system(size: 13, weight: .heavy))
-                            .tracking(2)
-                        Text("v0.1.0 native")
+                            .tracking(1.2)
+                        Text("personal assistant")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(StudioPalette.muted)
                     }
@@ -395,8 +396,8 @@ private struct Sidebar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, compact ? 2 : 10)
 
-                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "workflows", active: true, compact: compact)
-                SidebarButton(icon: "square.stack.3d.up", label: "your nodes", active: false, compact: compact)
+                SidebarButton(icon: "tray.full", label: "life inbox", active: true, compact: compact)
+                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "automations", active: false, compact: compact)
                 SidebarButton(icon: "clock", label: "runs", active: false, compact: compact)
                 SidebarButton(icon: "gearshape", label: "settings", active: false, compact: compact)
 
@@ -406,14 +407,14 @@ private struct Sidebar: View {
                     Image(systemName: "circle.fill")
                         .foregroundStyle(StudioPalette.accent)
                         .frame(maxWidth: .infinity)
-                        .help("runner local")
+                        .help("assistant local")
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("runner local", systemImage: "circle.fill")
+                        Label("assistant local", systemImage: "circle.fill")
                             .foregroundStyle(StudioPalette.accent)
                         Text("workspace")
                             .foregroundStyle(StudioPalette.muted)
-                        Text("~/Workflow Studio")
+                        Text("~/Nexus")
                             .foregroundStyle(StudioPalette.accent)
                             .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                     }
@@ -473,14 +474,16 @@ private struct PromptPanel: View {
         ReactiveBackgroundContainer(color: StudioPalette.background) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("ask AI to build a workflow")
+                    Text("life command inbox")
                         .font(.system(size: 16, weight: .bold))
-                    Text("generated locally with Ollama")
+                    Text("paste notes, tasks, dates, links, or plans")
                         .font(.system(size: 12))
                         .foregroundStyle(StudioPalette.muted)
                 }
 
-                if model.hasWorkflow {
+                if let plan = model.lifePlan {
+                    LifePlanCard(plan: plan, build: model.buildWorkflow)
+                } else if model.hasWorkflow {
                     VStack(alignment: .leading, spacing: 10) {
                         Bubble(text: model.workflow.prompt, sender: "You", alignRight: true)
                         Bubble(text: "Generated executable runner steps with the local model.", sender: "Local AI", alignRight: false)
@@ -494,7 +497,7 @@ private struct PromptPanel: View {
                         .padding(10)
 
                     if model.prompt.isEmpty {
-                        Text("Describe the automation you want Nex to build")
+                        Text("Paste meeting notes, school tasks, errands, links, or a messy plan")
                             .font(.system(size: 13))
                             .foregroundStyle(StudioPalette.muted)
                             .padding(.horizontal, 15)
@@ -502,17 +505,28 @@ private struct PromptPanel: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .frame(height: model.hasWorkflow ? 118 : 168)
+                .frame(height: model.lifePlan == nil && !model.hasWorkflow ? 168 : 118)
                 .background(StudioPalette.panelStrong)
                 .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
 
                 HStack {
-                    Button(action: model.generateWorkflow) {
-                        Label("generate canvas", systemImage: "wand.and.sparkles")
+                    Button(action: model.createLifePlan) {
+                        Label(model.isPlanning ? "planning" : "plan life", systemImage: "sparkles")
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(!model.canGenerate)
+                    .disabled(!model.canCreateLifePlan)
+                    Button(action: {
+                        if model.lifePlan == nil {
+                            model.generateWorkflow()
+                        } else {
+                            model.buildWorkflowFromLifePlan()
+                        }
+                    }) {
+                        Label(model.lifePlan == nil ? "generate canvas" : "build workflow", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(model.lifePlan == nil ? !model.canGenerate : model.topAutomationIntent == nil)
                     Button(action: model.dryRun) {
                         Label("dry run", systemImage: "play")
                     }
@@ -526,7 +540,7 @@ private struct PromptPanel: View {
                         .foregroundStyle(StudioPalette.muted)
                         .padding(.top, 4)
 
-                    AutomationRow(title: model.workflow.name, subtitle: "Generated from pasted details", active: true)
+                    AutomationRow(title: model.workflow.name, subtitle: "Generated from assistant context", active: true)
                 }
 
                 if let output = model.workflow.executionOutput {
@@ -555,6 +569,103 @@ private struct PromptPanel: View {
         }
         .frame(minWidth: 244, idealWidth: compact ? 286 : 324, maxWidth: 520)
         .layoutPriority(3)
+    }
+}
+
+private struct LifePlanCard: View {
+    var plan: LifePlan
+    var build: (LifeAutomation) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Label(plan.title, systemImage: "tray.full")
+                    .font(.system(size: 13, weight: .bold))
+                    .lineLimit(1)
+                Spacer()
+                StatusPill(label: "date", value: plan.date, color: StudioPalette.muted)
+            }
+
+            Text(plan.brief)
+                .font(.system(size: 12))
+                .foregroundStyle(StudioPalette.muted)
+                .lineLimit(4)
+
+            HStack(spacing: 8) {
+                MiniMetric(label: "tasks", value: "\(plan.stats.tasks)")
+                MiniMetric(label: "questions", value: "\(plan.stats.questions)")
+                MiniMetric(label: "links", value: "\(plan.stats.resources)")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Next Actions".uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(StudioPalette.muted)
+                ForEach(Array(plan.tasks.prefix(3))) { task in
+                    Label(task.title, systemImage: task.priority == "high" ? "exclamationmark.circle" : "checkmark.circle")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(task.priority == "high" ? StudioPalette.amber : StudioPalette.text)
+                        .lineLimit(1)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Assistant Automations".uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(StudioPalette.muted)
+                ForEach(Array(plan.automations.prefix(3))) { automation in
+                    Button {
+                        build(automation)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: automation.riskLevel == "low" ? "doc.badge.gearshape" : "safari")
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(automation.title)
+                                    .font(.system(size: 12, weight: .bold))
+                                Text(automation.impact)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(StudioPalette.muted)
+                                    .lineLimit(2)
+                            }
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .padding(10)
+                        .background(StudioPalette.panelStrong)
+                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Build this suggested automation")
+                }
+            }
+        }
+        .padding(12)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+    }
+}
+
+private struct MiniMetric: View {
+    var label: String
+    var value: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(value)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(StudioPalette.accentBright)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(StudioPalette.muted)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(StudioPalette.panelStrong)
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
     }
 }
 
@@ -635,8 +746,8 @@ private struct CanvasPanel: View {
                                     WarpingGridBackground(nodes: [])
                                     EmptySurface(
                                         icon: "point.3.connected.trianglepath.dotted",
-                                        title: "NexSpace",
-                                        detail: "generate, load, and chain nodes together"
+                                        title: "Life Canvas",
+                                        detail: "plan your day, then approve local workflows"
                                     )
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -796,7 +907,7 @@ private struct CodeSurface: View {
                                 }
                             }
 
-                            Text("Raw scripts are visible for inspection. Nexus still uses dry-run and trust approval gates before a local run.")
+                            Text("Raw scripts stay visible. Nexus still uses dry-run and trust approval gates before a local run.")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(StudioPalette.muted)
                         }
@@ -818,7 +929,7 @@ private struct RunsSurface: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
-                        Label("local run timeline", systemImage: "clock.arrow.circlepath")
+                        Label("assistant run timeline", systemImage: "clock.arrow.circlepath")
                             .font(.system(size: 16, weight: .semibold))
                         Spacer()
                         StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
@@ -1023,7 +1134,7 @@ private struct InspectorPanel: View {
                                 }
                             }
 
-                            InspectorSection(title: "Affected Files") {
+                            InspectorSection(title: "Affected Local Actions") {
                                 VStack(spacing: 8) {
                                     ForEach(model.workflow.impacts) { item in
                                         ImpactRow(item: item)
@@ -1120,7 +1231,7 @@ private struct LogDrawer: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("local run logs")
+                    Text("assistant run logs")
                         .font(.system(size: 13, weight: .semibold))
                     Spacer()
                     Text("Stored locally")
@@ -1130,7 +1241,7 @@ private struct LogDrawer: View {
                 ScrollView {
                     VStack(spacing: 6) {
                         if model.logs.isEmpty {
-                            Text("No local runs yet.")
+                            Text("No assistant runs yet.")
                                 .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                                 .foregroundStyle(StudioPalette.muted)
                                 .frame(maxWidth: .infinity, alignment: .leading)

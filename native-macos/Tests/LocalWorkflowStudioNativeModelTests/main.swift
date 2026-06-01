@@ -26,6 +26,10 @@ struct MockEngineClient: WorkflowEngineClientProtocol {
     func listNodes() async throws -> [ExecutableNode] {
         [try await generateNode(intent: "saved", context: [:])]
     }
+
+    func createLifePlan(text: String) async throws -> LifePlan {
+        sampleLifePlan()
+    }
 }
 
 final class RecordingEngineClient: @unchecked Sendable, WorkflowEngineClientProtocol {
@@ -44,6 +48,10 @@ final class RecordingEngineClient: @unchecked Sendable, WorkflowEngineClientProt
 
     func listNodes() async throws -> [ExecutableNode] {
         [node(id: "22222222-2222-4222-8222-222222222222", label: "Second")]
+    }
+
+    func createLifePlan(text: String) async throws -> LifePlan {
+        sampleLifePlan()
     }
 
     private func node(id: String, label: String) -> ExecutableNode {
@@ -70,6 +78,8 @@ struct ModelTestRunner {
         await testSavedNodesLoad()
         await testLoadedNodesAppendAndConnectionsRejectCycles()
         await testGraphExecutesConnectedNodesInOrder()
+        await testLifePlanCreatesAssistantBrief()
+        await testLifePlanCanBuildWorkflow()
         print("LocalWorkflowStudioNativeModelTests passed")
     }
 
@@ -191,4 +201,57 @@ struct ModelTestRunner {
         precondition(client.contexts[1]["nodes"] == .object(["0": .object(["output": .string("First")])]))
         precondition(model.workflow.executionOutput == "Second")
     }
+
+    static func testLifePlanCreatesAssistantBrief() async {
+        let model = model()
+        model.prompt = "Title: Weekly reset\nTasks:\n- Send recap by tonight\nQuestions:\nWhat can wait?"
+        await model.createLifePlanFromBackend()
+        precondition(model.lifePlan?.title == "Weekly reset")
+        precondition(model.lifePlan?.tasks.count == 1)
+        precondition(model.lifePlan?.automations.first?.title == "Save command brief")
+        precondition(model.runnerStatus == "Plan ready")
+        precondition(model.logs.contains(where: { $0.node == "Life AI" && $0.message.contains("automation suggestion") }))
+    }
+
+    static func testLifePlanCanBuildWorkflow() async {
+        let model = model()
+        model.prompt = "Title: Weekly reset\nTasks:\n- Send recap by tonight"
+        await model.createLifePlanFromBackend()
+        await model.buildWorkflowFromLifePlanFromBackend()
+        precondition(model.hasWorkflow)
+        precondition(model.prompt.contains("write a string"))
+        precondition(model.workflow.nodes.first?.title == "Write local result")
+    }
+}
+
+func sampleLifePlan() -> LifePlan {
+    LifePlan(
+        id: "life-plan-test",
+        title: "Weekly reset",
+        date: "2026-06-01",
+        context: "Personal command center intake",
+        brief: "Weekly reset has one task and one open question.",
+        sourceText: "Title: Weekly reset",
+        stats: LifePlanStats(tasks: 1, resources: 0, questions: 1, automations: 1),
+        tasks: [
+            LifeTask(id: "task-send-recap-1", title: "Send recap", status: "todo", dueDateText: "tonight", priority: "high", source: "Send recap by tonight")
+        ],
+        resources: [],
+        questions: [
+            LifeQuestion(id: "question-wait-1", text: "What can wait?")
+        ],
+        nextMeeting: nil,
+        automations: [
+            LifeAutomation(
+                id: "automation-save-brief",
+                title: "Save command brief",
+                intent: "write a string to /tmp/nexus-life-brief.md with content Weekly reset",
+                impact: "Creates a local Markdown command brief.",
+                riskLevel: "low",
+                requiresApproval: true
+            )
+        ],
+        warnings: ["Review before running."],
+        rawSummary: "Weekly reset"
+    )
 }

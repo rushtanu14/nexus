@@ -2,6 +2,7 @@ import http from "node:http";
 import express from "express";
 import { executeNode } from "./executor.js";
 import { generateNode, OLLAMA_BASE_URL, OLLAMA_MODEL } from "./generator.js";
+import { createLifePlan } from "./life-assistant.js";
 import { listServers, registerServer, scrapeServer } from "./mcp-registry.js";
 import { listNodes, saveNode } from "./node-store.js";
 
@@ -24,6 +25,9 @@ export function createApp() {
   }));
   app.post("/node/run", asyncRoute(async (request, response) => {
     response.json(await executeNode(request.body.node, request.body.context ?? {}));
+  }));
+  app.post("/life/plan", asyncRoute(async (request, response) => {
+    response.json(createLifePlan(request.body.text ?? request.body.notes ?? ""));
   }));
   app.post("/mcp/register", asyncRoute(async (request, response) => {
     await registerServer(request.body.app, request.body.url);
