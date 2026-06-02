@@ -258,7 +258,7 @@ private struct WalkthroughOverlay: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Label("Nexus walkthrough", systemImage: "sparkles")
-                            .font(.custom("Söhne", size: 13).weight(.bold))
+                            .font(.system(size: 13).weight(.bold))
                             .foregroundStyle(StudioPalette.accentBright)
                         Spacer()
                         Button(action: close) {
@@ -270,7 +270,7 @@ private struct WalkthroughOverlay: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Step \(stepIndex + 1) of \(steps.count)")
-                            .font(.custom("Söhne", size: 11).weight(.bold))
+                            .font(.system(size: 11).weight(.bold))
                             .foregroundStyle(StudioPalette.muted)
                         GeometryReader { proxy in
                             ZStack(alignment: .leading) {
@@ -288,16 +288,16 @@ private struct WalkthroughOverlay: View {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(StudioPalette.accentSoft)
                             Image(systemName: activeStep.icon)
-                                .font(.custom("Söhne", size: 24).weight(.semibold))
+                                .font(.system(size: 24).weight(.semibold))
                                 .foregroundStyle(StudioPalette.accentBright)
                         }
                         .frame(width: 54, height: 54)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text(activeStep.title)
-                                .font(.custom("Söhne", size: 23).weight(.bold))
+                                .font(.system(size: 23).weight(.bold))
                             Text(activeStep.detail)
-                                .font(.custom("Söhne", size: 14))
+                                .font(.system(size: 14))
                                 .foregroundStyle(StudioPalette.muted)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -306,7 +306,7 @@ private struct WalkthroughOverlay: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(activeStep.checks, id: \.self) { check in
                             Label(check, systemImage: "checkmark.circle.fill")
-                                .font(.custom("Söhne", size: 13).weight(.medium))
+                                .font(.system(size: 13).weight(.medium))
                                 .foregroundStyle(StudioPalette.text)
                         }
                     }
@@ -345,7 +345,7 @@ private struct WalkthroughOverlay: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map")
-                        .font(.custom("Söhne", size: 11).weight(.bold))
+                        .font(.system(size: 11).weight(.bold))
                         .foregroundStyle(StudioPalette.muted)
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                         WalkthroughMapRow(
@@ -382,7 +382,7 @@ private struct WalkthroughMapRow: View {
         Button(action: select) {
             HStack(spacing: 10) {
                 Text("\(index + 1)")
-                    .font(.custom("Söhne", size: 11).weight(.bold))
+                    .font(.system(size: 11).weight(.bold))
                     .frame(width: 24, height: 24)
                     .background(active ? StudioPalette.accentBright : StudioPalette.panelStrong)
                     .foregroundStyle(active ? Color.black.opacity(0.85) : StudioPalette.muted)
@@ -390,10 +390,10 @@ private struct WalkthroughMapRow: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(step.title)
-                        .font(.custom("Söhne", size: 12).weight(.semibold))
+                        .font(.system(size: 12).weight(.semibold))
                         .lineLimit(1)
                     Text(step.id.capitalized)
-                        .font(.custom("Söhne", size: 10).weight(.medium))
+                        .font(.system(size: 10).weight(.medium))
                         .foregroundStyle(StudioPalette.muted)
                 }
 
@@ -426,10 +426,10 @@ private struct Sidebar: View {
                         .shadow(color: StudioPalette.accentBright.opacity(0.15), radius: 18, x: 0, y: 12)
                     if !compact {
                         Text("NEXUS")
-                            .font(.custom("Söhne", size: 13).weight(.heavy))
+                            .font(.system(size: 13).weight(.heavy))
                             .tracking(2)
                         Text("v0.1.0 native")
-                            .font(.custom("Söhne", size: 11).weight(.medium))
+                            .font(.system(size: 11).weight(.medium))
                             .foregroundStyle(StudioPalette.muted)
                     }
                 }
@@ -464,9 +464,9 @@ private struct Sidebar: View {
                             .foregroundStyle(StudioPalette.muted)
                         Text("~/Workflow Studio")
                             .foregroundStyle(StudioPalette.accent)
-                            .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                            .font(.system(size: 11, design: .monospaced).monospaced())
                     }
-                    .font(.custom("Söhne", size: 12).weight(.medium))
+                    .font(.system(size: 12).weight(.medium))
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(StudioPalette.panel)
@@ -552,10 +552,10 @@ private struct HubWorkflowCard: View {
                 ForEach(saved.workflow.nodes.prefix(4)) { node in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(node.deliverable)
-                            .font(.custom("Söhne", size: 13).weight(.semibold))
+                            .font(.system(size: 13).weight(.semibold))
                             .lineLimit(2)
                         Text(node.schedule)
-                            .font(.custom("Söhne", size: 11))
+                            .font(.system(size: 11))
                             .foregroundStyle(StudioPalette.muted)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -564,7 +564,7 @@ private struct HubWorkflowCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
                 Text(saved.workflow.groupedSchedule.isEmpty ? "Independent node timing" : "Grouped: \(saved.workflow.groupedSchedule)")
-                    .font(.custom("Söhne", size: 11).weight(.medium))
+                    .font(.system(size: 11).weight(.medium))
                     .foregroundStyle(StudioPalette.accentBright)
         }
         .padding(15)
@@ -638,7 +638,7 @@ private struct NexEchoSurface: View {
                         Spacer()
                         TimelineView(.periodic(from: .now, by: 1)) { _ in
                             Text(Self.duration(store.elapsed))
-                                .font(.custom("Berkeley Mono", size: 14).monospaced())
+                                .font(.system(size: 14, design: .monospaced).monospaced())
                                 .foregroundStyle(StudioPalette.accentBright)
                         }
                         Button(action: store.toggleRecording) {
@@ -765,7 +765,7 @@ private struct NexBrainSurface: View {
                         }
 
                         Text(providerDetail)
-                            .font(.custom("Söhne", size: 12))
+                            .font(.system(size: 12))
                             .foregroundStyle(StudioPalette.muted)
 
                         HStack {
@@ -776,7 +776,7 @@ private struct NexBrainSurface: View {
                                     .buttonStyle(SecondaryButtonStyle())
                             }
                             Text(model.brainStatus)
-                                .font(.custom("Söhne", size: 12).weight(.medium))
+                                .font(.system(size: 12).weight(.medium))
                                 .foregroundStyle(StudioPalette.accentBright)
                             Spacer()
                             Button {
@@ -800,8 +800,8 @@ private struct NexBrainSurface: View {
 
     private var providerDetail: String {
         switch model.brainConfig.provider {
-        case "ollama": return "On first Nex chat, Nexus starts Ollama if needed and pulls the selected model if it is missing."
-        case "lmstudio": return "On first Nex chat, Nexus uses the installed LM Studio CLI to start the server, download the model if needed, and load it."
+        case "ollama": return "Nexus can start Ollama if it is installed. Use prepare now to pull the selected model before chatting."
+        case "lmstudio": return "Use prepare now to start the LM Studio server, download the selected model if needed, and load it."
         default: return "Paste a model name and key. The endpoint defaults to OpenAI and can be changed for any OpenAI-compatible provider."
         }
     }
@@ -814,7 +814,7 @@ private struct BrainField<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title.uppercased())
-                .font(.custom("Söhne", size: 11).weight(.bold))
+                .font(.system(size: 11).weight(.bold))
                 .foregroundStyle(StudioPalette.muted)
             content
         }
@@ -838,7 +838,7 @@ private struct SidebarButton: View {
                     Spacer()
                 }
             }
-            .font(.custom("Söhne", size: 14).weight(.medium))
+            .font(.system(size: 14).weight(.medium))
             .padding(.horizontal, compact ? 0 : 12)
             .frame(height: 42)
             .frame(maxWidth: .infinity)
@@ -898,10 +898,10 @@ private struct PromptPanel: View {
                 if let output = model.workflow.executionOutput {
                     VStack(alignment: .leading, spacing: 7) {
                         Label("task completed", systemImage: "checkmark.circle.fill")
-                            .font(.custom("Söhne", size: 12).weight(.bold))
+                            .font(.system(size: 12).weight(.bold))
                             .foregroundStyle(StudioPalette.accentBright)
                         Text(output)
-                            .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                            .font(.system(size: 11, design: .monospaced).monospaced())
                             .textSelection(.enabled)
                             .lineLimit(6)
                     }
@@ -979,7 +979,7 @@ private struct CanvasPanel: View {
                 .frame(width: compact ? 320 : 368)
                 Spacer()
                 Text(model.pendingConnectionSourceID == nil ? selectedTab.guidance : "Choose an input dot to finish the connection.")
-                    .font(.custom("Söhne", size: 12).weight(.medium))
+                    .font(.system(size: 12).weight(.medium))
                     .foregroundStyle(model.pendingConnectionSourceID == nil ? StudioPalette.muted : StudioPalette.accentBright)
                     .lineLimit(1)
                 StatusPill(
@@ -1052,7 +1052,7 @@ private struct CanvasPanel: View {
                                                 RoundedRectangle(cornerRadius: 3).fill(StudioPalette.accent.opacity(0.16))
                                                 RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.accentBright, lineWidth: 2)
                                                 Image(systemName: "arrow.right")
-                                                    .font(.custom("Söhne", size: 13).weight(.bold))
+                                                    .font(.system(size: 13).weight(.bold))
                                                     .foregroundStyle(StudioPalette.accentBright)
                                             }
                                             .frame(width: 42 * scale, height: 42 * scale)
@@ -1135,7 +1135,7 @@ private struct CodeSurface: View {
                             }
 
                             Text(model.workflow.rawScript)
-                                .font(.custom("Berkeley Mono", size: 13, relativeTo: .body).monospaced())
+                                .font(.system(size: 13, design: .monospaced).monospaced())
                                 .foregroundStyle(StudioPalette.code)
                                 .padding(16)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1146,12 +1146,12 @@ private struct CodeSurface: View {
 
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Warnings".uppercased())
-                                    .font(.custom("Söhne", size: 11).weight(.bold))
+                                    .font(.system(size: 11).weight(.bold))
                                     .foregroundStyle(StudioPalette.muted)
 
                                 ForEach(model.workflow.warnings, id: \.self) { warning in
                                     Label(warning, systemImage: "exclamationmark.triangle")
-                                        .font(.custom("Söhne", size: 12))
+                                        .font(.system(size: 12))
                                         .foregroundStyle(StudioPalette.amber)
                                         .padding(10)
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1162,7 +1162,7 @@ private struct CodeSurface: View {
                             }
 
                             Text("Raw scripts are visible for inspection. Nexus still uses dry-run and trust approval gates before a local run.")
-                                .font(.custom("Söhne", size: 12).weight(.medium))
+                                .font(.system(size: 12).weight(.medium))
                                 .foregroundStyle(StudioPalette.muted)
                         }
                         .padding(24)
@@ -1197,16 +1197,16 @@ private struct RunsSurface: View {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(log.node)
-                                        .font(.custom("Söhne", size: 12).weight(.bold))
+                                        .font(.system(size: 12).weight(.bold))
                                         .foregroundStyle(statusColor(log.status))
                                     Text(log.time, style: .time)
-                                        .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                        .font(.system(size: 11, design: .monospaced).monospaced())
                                         .foregroundStyle(StudioPalette.muted)
                                 }
                                 .frame(width: 96, alignment: .leading)
 
                                 Text(log.message)
-                                    .font(.custom("Söhne", size: 13))
+                                    .font(.system(size: 13))
                                     .foregroundStyle(StudioPalette.text)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -1245,7 +1245,7 @@ private struct NodesSurface: View {
                     }
 
                     Text("Generated executable nodes saved by the local backend. Load one to inspect, trust, and run it again.")
-                        .font(.custom("Söhne", size: 12).weight(.medium))
+                        .font(.system(size: 12).weight(.medium))
                         .foregroundStyle(StudioPalette.muted)
 
                     if model.savedNodes.isEmpty {
@@ -1255,18 +1255,18 @@ private struct NodesSurface: View {
                         ForEach(model.savedNodes, id: \.id) { node in
                             HStack(alignment: .top, spacing: 14) {
                                 Image(systemName: "gearshape.2")
-                                    .font(.custom("Söhne", size: 18).weight(.semibold))
+                                    .font(.system(size: 18).weight(.semibold))
                                     .foregroundStyle(StudioPalette.accentBright)
                                     .frame(width: 28)
 
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(node.meta.label)
-                                        .font(.custom("Söhne", size: 14).weight(.bold))
+                                        .font(.system(size: 14).weight(.bold))
                                     Text("\(node.meta.app) / \(node.meta.category) / \(node.runner.steps.count) step(s)")
-                                        .font(.custom("Söhne", size: 12))
+                                        .font(.system(size: 12))
                                         .foregroundStyle(StudioPalette.muted)
                                     Text(node.runner.steps.map(\.primitive).joined(separator: "  ->  "))
-                                        .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                        .font(.system(size: 11, design: .monospaced).monospaced())
                                         .foregroundStyle(StudioPalette.code)
                                         .lineLimit(2)
                                 }
@@ -1305,13 +1305,13 @@ private struct EmptySurface: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.custom("Söhne", size: 28).weight(.semibold))
+                .font(.system(size: 28).weight(.semibold))
                 .foregroundStyle(StudioPalette.accentBright)
             Text(title)
-                .font(.custom("Söhne", size: 17).weight(.semibold))
+                .font(.system(size: 17).weight(.semibold))
             if !detail.isEmpty {
                 Text(detail)
-                    .font(.custom("Söhne", size: 13).weight(.medium))
+                    .font(.system(size: 13).weight(.medium))
                     .foregroundStyle(StudioPalette.muted)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
@@ -1336,7 +1336,7 @@ private struct InspectorPanel: View {
                             .font(StudioType.cardTitle)
                         Spacer()
                         Text(node.status.rawValue)
-                            .font(.custom("Söhne", size: 11).weight(.semibold))
+                            .font(.system(size: 11).weight(.semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(statusColor(node.status).opacity(0.18))
@@ -1353,7 +1353,7 @@ private struct InspectorPanel: View {
                             InspectorSection(title: "Plain-English Summary") {
                                 Text(summary(for: node))
                                     .foregroundStyle(StudioPalette.muted)
-                                    .font(.custom("Söhne", size: 13))
+                                    .font(.system(size: 13))
                             }
 
                             InspectorSection(title: "Hub Deliverable") {
@@ -1380,7 +1380,7 @@ private struct InspectorPanel: View {
                                         clear: model.clearSelectedNodeSchedule
                                     )
                                     Text(model.workflow.groupedSchedule.isEmpty ? "This node runs on its own timer." : "Workflow timing is on. This node timer is saved but temporarily disregarded.")
-                                        .font(.custom("Söhne", size: 11))
+                                        .font(.system(size: 11))
                                         .foregroundStyle(StudioPalette.muted)
                                 }
                             }
@@ -1399,7 +1399,7 @@ private struct InspectorPanel: View {
                                     if visibleEdges.isEmpty {
                                         Text("No manual connections yet.")
                                             .foregroundStyle(StudioPalette.muted)
-                                            .font(.custom("Söhne", size: 12))
+                                            .font(.system(size: 12))
                                     } else {
                                         ForEach(visibleEdges) { edge in
                                             ConnectionRow(
@@ -1420,7 +1420,7 @@ private struct InspectorPanel: View {
                                     ForEach(model.workflow.warnings, id: \.self) { warning in
                                         Label(warning, systemImage: "exclamationmark.triangle")
                                             .foregroundStyle(StudioPalette.amber)
-                                            .font(.custom("Söhne", size: 12))
+                                            .font(.system(size: 12))
                                     }
                                 }
                             }
@@ -1435,7 +1435,7 @@ private struct InspectorPanel: View {
 
                             InspectorSection(title: "Raw Script") {
                                 Text(model.workflow.rawScript)
-                                    .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                    .font(.system(size: 11, design: .monospaced).monospaced())
                                     .foregroundStyle(StudioPalette.code)
                                     .padding(12)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1446,7 +1446,7 @@ private struct InspectorPanel: View {
                             if let output = model.workflow.executionOutput {
                                 InspectorSection(title: "Last Output") {
                                     Text(output)
-                                        .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                        .font(.system(size: 11, design: .monospaced).monospaced())
                                         .foregroundStyle(StudioPalette.accentBright)
                                         .padding(12)
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1531,7 +1531,7 @@ private struct LogDrawer: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("local run logs")
-                        .font(.custom("Söhne", size: 13).weight(.semibold))
+                        .font(.system(size: 13).weight(.semibold))
                     Spacer()
                     HStack(spacing: 8) {
                         Toggle("workflow timer", isOn: Binding(
@@ -1546,7 +1546,7 @@ private struct LogDrawer: View {
                         ))
                         .toggleStyle(.switch)
                         .controlSize(.mini)
-                        .font(.custom("Söhne", size: 11).weight(.semibold))
+                        .font(.system(size: 11).weight(.semibold))
                         NodeSchedulePill(
                             schedule: model.workflow.groupedSchedule.isEmpty ? "Daily at \(Self.timeFormatter.string(from: Date()))" : model.workflow.groupedSchedule,
                             setDaily: model.setWorkflowDaily,
@@ -1557,13 +1557,13 @@ private struct LogDrawer: View {
                     }
                     Text("Stored locally")
                         .foregroundStyle(StudioPalette.muted)
-                        .font(.custom("Söhne", size: 11).weight(.medium))
+                        .font(.system(size: 11).weight(.medium))
                 }
                 ScrollView {
                     VStack(spacing: 6) {
                         if model.logs.isEmpty {
                             Text("No local runs yet.")
-                                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                .font(.system(size: 11, design: .monospaced).monospaced())
                                 .foregroundStyle(StudioPalette.muted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
@@ -1578,7 +1578,7 @@ private struct LogDrawer: View {
                                     Text(log.message)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                                .font(.system(size: 11, design: .monospaced).monospaced())
                             }
                         }
                     }
@@ -1623,9 +1623,9 @@ private struct NodeSchedulePill: View {
                 Text(displaySchedule)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.custom("Söhne", size: 10).weight(.bold))
+                    .font(.system(size: 10).weight(.bold))
             }
-            .font(.custom("Söhne", size: 12).weight(.semibold))
+            .font(.system(size: 12).weight(.semibold))
             .padding(.horizontal, 11)
             .frame(height: 30)
             .background(StudioPalette.panelStrong)
@@ -1636,7 +1636,7 @@ private struct NodeSchedulePill: View {
         .popover(isPresented: $popoverOpen, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Schedule")
-                    .font(.custom("Söhne", size: 15).weight(.semibold))
+                    .font(.system(size: 15).weight(.semibold))
                 Picker("Schedule", selection: $cadence) {
                     ForEach(ScheduleCadence.allCases) { option in
                         Text(option.rawValue).tag(option)
@@ -1744,20 +1744,20 @@ private struct NodeCard: View {
         ZStack {
             VStack(spacing: 8) {
                 Image(systemName: iconName(for: node.kind))
-                    .font(.custom("Söhne", size: 20).weight(.semibold))
+                    .font(.system(size: 20).weight(.semibold))
                     .foregroundStyle(statusColor(node.status))
                 Text(node.title)
-                    .font(.custom("Söhne", size: 13).weight(.semibold))
+                    .font(.system(size: 13).weight(.semibold))
                     .foregroundStyle(StudioPalette.text)
                 Text(node.subtitle)
-                    .font(.custom("Söhne", size: 10))
+                    .font(.system(size: 10))
                     .foregroundStyle(StudioPalette.muted)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 RoundedRectangle(cornerRadius: 2)
                     .fill(statusColor(node.status))
                     .frame(width: 16, height: 16)
-                    .overlay(Image(systemName: node.status == .warning ? "exclamationmark" : "checkmark").font(.custom("Söhne", size: 8).weight(.bold)).foregroundStyle(.black.opacity(0.7)))
+                    .overlay(Image(systemName: node.status == .warning ? "exclamationmark" : "checkmark").font(.system(size: 8).weight(.bold)).foregroundStyle(.black.opacity(0.7)))
             }
             .padding(12)
             .frame(width: 136, height: 104)
@@ -1800,7 +1800,7 @@ private struct ConnectorButton: View {
                 RoundedRectangle(cornerRadius: 3).fill(StudioPalette.canvas)
                 RoundedRectangle(cornerRadius: 3).stroke(color.opacity(0.9), lineWidth: 1.5)
                 Image(systemName: systemName)
-                    .font(.custom("Söhne", size: 8).weight(.heavy))
+                    .font(.system(size: 8).weight(.heavy))
                     .foregroundStyle(color)
             }
             .frame(width: 22, height: 22)
@@ -1835,7 +1835,7 @@ private struct EdgeDeleteButton: View {
                 RoundedRectangle(cornerRadius: 3).fill(StudioPalette.canvas.opacity(0.96))
                 RoundedRectangle(cornerRadius: 3).stroke(isFallback ? StudioPalette.amber : StudioPalette.accentBright, lineWidth: isHovering ? 2 : 1.4)
                 Image(systemName: "xmark")
-                    .font(.custom("Söhne", size: 8).weight(.heavy))
+                    .font(.system(size: 8).weight(.heavy))
                     .foregroundStyle(isHovering ? StudioPalette.text : StudioPalette.muted)
             }
             .frame(width: isHovering ? 26 : 22, height: isHovering ? 26 : 22)
@@ -2056,10 +2056,10 @@ private struct Bubble: View {
     var body: some View {
         VStack(alignment: alignRight ? .trailing : .leading, spacing: 6) {
             Text(sender)
-                .font(.custom("Söhne", size: 10).weight(.bold))
+                .font(.system(size: 10).weight(.bold))
                 .foregroundStyle(StudioPalette.muted)
             Text(text)
-                .font(.custom("Söhne", size: 13))
+                .font(.system(size: 13))
                 .foregroundStyle(StudioPalette.text)
         }
         .padding(12)
@@ -2079,8 +2079,8 @@ private struct AutomationRow: View {
         HStack {
             RoundedRectangle(cornerRadius: 1).fill(active ? StudioPalette.accent : StudioPalette.muted).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.custom("Söhne", size: 13).weight(.semibold))
-                Text(subtitle).font(.custom("Söhne", size: 11)).foregroundStyle(StudioPalette.muted)
+                Text(title).font(.system(size: 13).weight(.semibold))
+                Text(subtitle).font(.system(size: 11)).foregroundStyle(StudioPalette.muted)
             }
             Spacer()
         }
@@ -2098,7 +2098,7 @@ private struct InspectorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title.uppercased())
-                .font(.custom("Söhne", size: 11).weight(.bold))
+                .font(.system(size: 11).weight(.bold))
                 .tracking(0.5)
                 .foregroundStyle(StudioPalette.muted)
             content
@@ -2120,10 +2120,10 @@ private struct ConnectionRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(fromTitle) -> \(toTitle)")
-                    .font(.custom("Söhne", size: 12).weight(.semibold))
+                    .font(.system(size: 12).weight(.semibold))
                     .lineLimit(1)
                 Text(edge.isFallback ? "Fallback path" : "Main path")
-                    .font(.custom("Söhne", size: 11))
+                    .font(.system(size: 11))
                     .foregroundStyle(StudioPalette.muted)
             }
 
@@ -2131,7 +2131,7 @@ private struct ConnectionRow: View {
 
             Button(action: remove) {
                 Image(systemName: "xmark")
-                    .font(.custom("Söhne", size: 10).weight(.bold))
+                    .font(.system(size: 10).weight(.bold))
             }
             .buttonStyle(IconButtonStyle())
             .frame(width: 30, height: 30)
@@ -2153,7 +2153,7 @@ private struct ParameterRow: View {
             Spacer()
             Text(value).fontWeight(.medium)
         }
-        .font(.custom("Söhne", size: 12))
+        .font(.system(size: 12))
         .padding(10)
         .background(StudioPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
@@ -2166,14 +2166,14 @@ private struct ImpactRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(item.action.uppercased())
-                .font(.custom("Söhne", size: 10).weight(.bold))
+                .font(.system(size: 10).weight(.bold))
                 .foregroundStyle(StudioPalette.accentBright)
             Text(item.source)
-                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                .font(.system(size: 11, design: .monospaced).monospaced())
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(item.destination)
-                .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
+                .font(.system(size: 11, design: .monospaced).monospaced())
                 .foregroundStyle(StudioPalette.muted)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -2376,7 +2376,7 @@ private struct FloatingNexOverlay: View {
                 ZStack(alignment: .bottomTrailing) {
                     FloatingAnimatedNexPet(model: model, voice: voice, petScale: petScale)
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        .font(.custom("Söhne", size: 10).weight(.bold))
+                        .font(.system(size: 10).weight(.bold))
                         .foregroundStyle(StudioPalette.accentBright)
                         .padding(4)
                         .background(StudioPalette.panel)
@@ -2467,14 +2467,14 @@ private struct FloatingAnimatedNexPet: View {
 }
 
 enum StudioType {
-    static let brandWordmark = Font.custom("Canela", size: 14, relativeTo: .body).weight(.bold)
-    static let pageTitle = Font.custom("Canela", size: 32, relativeTo: .largeTitle).weight(.bold)
-    static let sectionTitle = Font.custom("Söhne", size: 24, relativeTo: .title).weight(.semibold)
-    static let cardTitle = Font.custom("Söhne", size: 18, relativeTo: .headline).weight(.semibold)
-    static let body = Font.custom("Söhne", size: 14, relativeTo: .body).weight(.regular)
-    static let secondary = Font.custom("Söhne", size: 12, relativeTo: .subheadline).weight(.regular)
-    static let metadata = Font.custom("Söhne", size: 11, relativeTo: .caption).weight(.medium)
-    static let button = Font.custom("Söhne", size: 14, relativeTo: .body).weight(.medium)
+    static let brandWordmark = Font.system(size: 14, design: .serif).weight(.bold)
+    static let pageTitle = Font.system(size: 32, design: .serif).weight(.bold)
+    static let sectionTitle = Font.system(size: 24).weight(.semibold)
+    static let cardTitle = Font.system(size: 18).weight(.semibold)
+    static let body = Font.system(size: 14).weight(.regular)
+    static let secondary = Font.system(size: 12).weight(.regular)
+    static let metadata = Font.system(size: 11).weight(.medium)
+    static let button = Font.system(size: 14).weight(.medium)
 }
 
 // MARK: - Button Styles — Geometric / Angular
@@ -2483,7 +2483,7 @@ private struct CanvasTabButtonStyle: ButtonStyle {
     var isSelected: Bool
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.custom("Söhne", size: 11).weight(.semibold))
+            .font(.system(size: 11).weight(.semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.85)
             .padding(.horizontal, 6)
@@ -2531,7 +2531,7 @@ private struct TrustButtonStyle: ButtonStyle {
     var disabledLook: Bool
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.custom("Söhne", size: 13).weight(.bold))
+            .font(.system(size: 13).weight(.bold))
             .padding(.horizontal, 14)
             .frame(height: 38)
             .frame(maxWidth: .infinity)
@@ -2561,7 +2561,7 @@ private struct StatusPill: View {
             Text(label + ":").foregroundStyle(StudioPalette.muted)
             Text(value)
         }
-        .font(.custom("Söhne", size: 12).weight(.semibold))
+        .font(.system(size: 12).weight(.semibold))
         .padding(.horizontal, 10)
         .frame(height: 30)
         .background(StudioPalette.panel)

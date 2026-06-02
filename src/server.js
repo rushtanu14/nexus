@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 
 export function createApp() {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: process.env.NEXUS_JSON_LIMIT ?? "2mb" }));
 
   app.get("/health", asyncRoute(async (_request, response) => {
     response.json({ ok: true, ollama: await ollamaStatus(), model: OLLAMA_MODEL, qdrant: await memoryStatus() });
@@ -88,14 +88,14 @@ export function createApp() {
     response.json(await createMemoryStore().remember(request.body.memory ?? request.body));
   }));
   app.post("/nex/complete", asyncRoute(async (request, response) => {
-    const prompt = String(request.body.prompt ?? "").trim();
-    if (!prompt) throw new Error("prompt is required");
+    const prompt = String(request.body.prompt ?? "");
+    if (!prompt.trim()) throw new Error("prompt is required");
     const project = request.body.project ?? "nexus";
     const memory = await optionalMemoryContext(prompt, { project, source: "nex/complete" });
     const completion = await completeWithNex(prompt, request.body.brain ?? {}, memory.context);
     await optionalRemember({
       memory_type: "prior_conversation",
-      content: `User asked Nex: ${prompt}`,
+      content: `User asked Nex: ${memoryText(prompt)}`,
       source: "nex/complete",
       importance: 0.5,
       project,
@@ -103,7 +103,7 @@ export function createApp() {
     });
     await optionalRemember({
       memory_type: "prior_conversation",
-      content: `Nex answered: ${completion}`,
+      content: `Nex answered: ${memoryText(completion)}`,
       source: "nex/complete",
       importance: 0.4,
       project,
@@ -181,6 +181,12 @@ function nodeRunMemory(node, result) {
 
 function lifePlanMemory(plan) {
   return `Created life plan "${plan.title}" with ${plan.stats.tasks} tasks, ${plan.stats.questions} questions, and ${plan.stats.automations} suggested automations. Brief: ${plan.brief}`;
+}
+
+function memoryText(value, maxLength = 2400) {
+  const text = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 20).trim()}... [truncated]`;
 }
 
 async function completeWithNex(prompt, brain, memoryContext) {

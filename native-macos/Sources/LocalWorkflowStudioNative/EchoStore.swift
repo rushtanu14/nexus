@@ -26,30 +26,65 @@ final class SpeechTranscriber {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var finalHandler: ((String) -> Void)?
-    private var silenceTimer: Timer?
+    private var startHandler: (() -> Void)?
+    private var failureHandler: ((String) -> Void)?
+    private var hasInputTap = false
 
-    func start(onFinal: ((String) -> Void)? = nil) {
+    func start(onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
         guard !isRecording else { return }
+        startHandler = onStart
+        failureHandler = onFailure
         finalHandler = onFinal
+        status = "Requesting permissions"
         Task {
             guard await requestPermissions() else {
                 status = "Microphone and speech permissions are required"
+                finishStartFailure(status)
                 return
             }
-            startAudio()
+            if !startAudio() {
+                finishStartFailure(status)
+            }
         }
     }
 
     func stop() {
-        guard isRecording else { return }
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        guard isRecording || hasInputTap else { return }
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        if hasInputTap {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
         request?.endAudio()
+        task?.cancel()
+        task = nil
+        request = nil
         isRecording = false
         status = "Ready"
         finalHandler?(transcript)
+        clearHandlers()
+    }
+
+    private func finishStartFailure(_ message: String) {
+        if hasInputTap {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            hasInputTap = false
+        }
+        request?.endAudio()
+        task?.cancel()
+        task = nil
+        request = nil
+        isRecording = false
+        failureHandler?(message)
+        clearHandlers()
+    }
+
+    private func clearHandlers() {
+        startHandler = nil
+        failureHandler = nil
         finalHandler = nil
-        silenceTimer?.invalidate()
     }
 
     private func requestPermissions() async -> Bool {
@@ -62,10 +97,10 @@ final class SpeechTranscriber {
         return microphone && speech
     }
 
-    private func startAudio() {
+    private func startAudio() -> Bool {
         guard let recognizer, recognizer.isAvailable else {
             status = "Speech recognition is unavailable"
-            return
+            return false
         }
         transcript = ""
         task?.cancel()
@@ -79,14 +114,17 @@ final class SpeechTranscriber {
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             request.append(buffer)
         }
+        hasInputTap = true
         audioEngine.prepare()
         do {
             try audioEngine.start()
             isRecording = true
             status = "Listening"
+            startHandler?()
+            startHandler = nil
         } catch {
             status = error.localizedDescription
-            return
+            return false
         }
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -100,6 +138,7 @@ final class SpeechTranscriber {
                 }
             }
         }
+        return true
     }
 }
 
@@ -219,11 +258,20 @@ final class EchoStore {
 
     func startRecording() {
         if selectedSession == nil { createEcho() }
-        recordingStartedAt = Date()
-        transcriber.start { [weak self] transcript in
-            self?.saveTranscript(transcript)
-        }
-        status = "Recording"
+        status = "Requesting microphone"
+        transcriber.start(
+            onStart: { [weak self] in
+                self?.recordingStartedAt = Date()
+                self?.status = "Recording"
+            },
+            onFailure: { [weak self] message in
+                self?.recordingStartedAt = nil
+                self?.status = message
+            },
+            onFinal: { [weak self] transcript in
+                self?.saveTranscript(transcript)
+            }
+        )
     }
 
     func stopRecording() {
@@ -239,14 +287,15 @@ final class EchoStore {
     }
 
     func polishNotes(using model: StudioModel) {
-        guard let index = selectedIndex else { return }
+        guard let sessionID = selectedID, let index = selectedIndex else { return }
         let source = sessions[index].notes.isEmpty ? sessions[index].transcript : sessions[index].notes
         guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         status = "Nex is polishing notes"
         Task {
             do {
                 let polished = try await model.completeWithNex("Polish these meeting notes. Preserve factual content, use clear headings and concise bullets:\n\n\(source)")
-                sessions[index].notes = polished
+                guard let currentIndex = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+                sessions[currentIndex].notes = polished
                 status = "Notes polished"
                 persist()
             } catch {
@@ -291,7 +340,7 @@ final class NexVoiceStore {
         if transcriber.isRecording {
             transcriber.stop()
         } else {
-            transcriber.start { [weak self] transcript in
+            transcriber.start(onFinal: { [weak self] transcript in
                 guard !transcript.isEmpty else { return }
                 self?.response = "Thinking..."
                 Task {
@@ -304,7 +353,7 @@ final class NexVoiceStore {
                         self?.response = error.localizedDescription
                     }
                 }
-            }
+            })
         }
     }
 

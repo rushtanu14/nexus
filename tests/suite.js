@@ -261,6 +261,45 @@ test("api: Nex completion uses and updates local memory", async () => {
   }
 });
 
+test("api: Nex completion accepts long transcript payloads", async () => {
+  let receivedPrompt = "";
+  const model = http.createServer(async (request, response) => {
+    const body = await readJsonBody(request);
+    receivedPrompt = body.messages?.[1]?.content ?? "";
+    sendJson(response, 200, { message: { content: "Long transcript accepted." } });
+  });
+  await new Promise((resolve) => model.listen(0, "127.0.0.1", resolve));
+  const modelPort = model.address().port;
+  const previous = {
+    memoryEnabled: process.env.NEXUS_MEMORY_ENABLED,
+    ollama: process.env.OLLAMA_BASE_URL
+  };
+  process.env.NEXUS_MEMORY_ENABLED = "0";
+  process.env.OLLAMA_BASE_URL = `http://127.0.0.1:${modelPort}`;
+
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const prompt = `Meeting transcript:\n${"Nex should handle long pasted transcript payloads. ".repeat(3600)}`;
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/nex/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt, brain: { provider: "ollama", model: "test-model", baseUrl: `http://127.0.0.1:${modelPort}` } })
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.completion, "Long transcript accepted.");
+    assert.equal(receivedPrompt, prompt);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => model.close(resolve));
+    restoreEnv("NEXUS_MEMORY_ENABLED", previous.memoryEnabled);
+    restoreEnv("OLLAMA_BASE_URL", previous.ollama);
+  }
+});
+
 test("memory: ensures local qdrant collection and payload indexes", async () => {
   const qdrant = await startFakeQdrant();
   try {

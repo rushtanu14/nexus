@@ -21,7 +21,7 @@ struct LocalWorkflowStudioNativeApp: App {
                     EngineProcessManager.shared.startIfNeeded()
                     model.startScheduleMonitor()
                     DispatchQueue.main.async {
-                        centerPrimaryWindow()
+                        positionPrimaryWindowBottomRight()
                     }
                 }
         }
@@ -47,20 +47,19 @@ struct LocalWorkflowStudioNativeApp: App {
         }
     }
 
-    private func centerPrimaryWindow() {
+    private func positionPrimaryWindowBottomRight() {
         guard let window = NSApplication.shared.windows.first,
               let screen = window.screen ?? NSScreen.main else {
             return
         }
 
         let visible = screen.visibleFrame
-        let width: CGFloat = 1180
-        let height: CGFloat = 760
-
-        // Position at the bottom right corner
+        let size = window.frame.size
+        let width = min(max(size.width, 1180), visible.width)
+        let height = min(max(size.height, 760), visible.height)
         let frame = NSRect(
-            x: visible.maxX - width - 20, // 20pt padding from right
-            y: visible.minY + 20,         // 20pt padding from bottom
+            x: max(visible.minX, visible.maxX - width - 20),
+            y: max(visible.minY, min(visible.minY + 20, visible.maxY - height)),
             width: width,
             height: height
         )
