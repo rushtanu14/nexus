@@ -334,7 +334,7 @@ public struct BrainConfig: Codable, Equatable, Sendable {
     public var apiKey: String
     public var baseUrl: String
 
-    public init(provider: String = "ollama", model: String = "qwen2.5-coder:7b", apiKey: String = "", baseUrl: String = "") {
+    public init(provider: String = "ollama", model: String = "qwen2.5-coder:1.5b", apiKey: String = "", baseUrl: String = "") {
         self.provider = provider
         self.model = model
         self.apiKey = apiKey
@@ -343,7 +343,7 @@ public struct BrainConfig: Codable, Equatable, Sendable {
 }
 
 public struct BrainCatalog: Equatable, Sendable {
-    public var ollama = ["qwen2.5-coder:7b", "llama3.2:3b", "gemma3:4b"]
+    public var ollama = ["qwen2.5-coder:1.5b", "qwen2.5-coder:7b", "llama3.2:3b", "gemma3:4b"]
     public var lmstudio = ["qwen2.5-coder-7b-instruct", "llama-3.2-3b-instruct", "gemma-3-4b-it"]
 
     public init() {}

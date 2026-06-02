@@ -7,8 +7,9 @@ const PRIMITIVES = [
   "fs_read", "fs_write", "shell_run", "http_request", "mcp_call", "ai_infer"
 ];
 
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5-coder:7b";
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5-coder:1.5b";
 export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let planner = ollamaPlanner;
 let generationCount = 0;
@@ -64,7 +65,7 @@ export async function ollamaPlanner(intent, context = {}, correction = null) {
       model: OLLAMA_MODEL,
       stream: false,
       format: "json",
-      options: { temperature: 0.2 },
+      options: { temperature: 0, seed: 42 },
       messages: [
         { role: "system", content: systemPrompt() },
         { role: "user", content: JSON.stringify({ intent, context, correction }) }
@@ -102,12 +103,44 @@ function validateRequiredFieldBindings(node, context) {
 
 function normalizeGeneratedNode(node) {
   if (!node || typeof node !== "object" || Array.isArray(node)) throw new Error("Local model returned an invalid node");
+  const fields = Array.isArray(node.fields) ? node.fields : [];
+  const fieldIds = new Set(fields.map((field) => field?.id).filter((id) => typeof id === "string"));
   return {
     ...node,
-    id: node.id || crypto.randomUUID(),
+    id: typeof node.id === "string" && UUID_PATTERN.test(node.id) ? node.id : crypto.randomUUID(),
+    fields,
+    runner: normalizeRunner(node.runner, fieldIds),
     meta: { ...node.meta, source: node.meta?.source ?? "manual" },
     mcp: node.mcp ?? null
   };
+}
+
+function normalizeRunner(runner, fieldIds) {
+  if (!runner || typeof runner !== "object" || Array.isArray(runner)) return runner;
+  return {
+    ...runner,
+    steps: Array.isArray(runner.steps)
+      ? runner.steps.map((step) => ({
+          ...step,
+          args: normalizeBindingsDeep(step?.args ?? {}, fieldIds)
+        }))
+      : runner.steps,
+    output_binding: normalizeBindings(runner.output_binding, fieldIds)
+  };
+}
+
+function normalizeBindingsDeep(value, fieldIds) {
+  if (typeof value === "string") return normalizeBindings(value, fieldIds);
+  if (Array.isArray(value)) return value.map((item) => normalizeBindingsDeep(item, fieldIds));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizeBindingsDeep(item, fieldIds)]));
+}
+
+function normalizeBindings(value, fieldIds) {
+  if (typeof value !== "string") return value;
+  return value.replace(/\{\{\s*([^{}.]+)\s*\}\}/g, (match, reference) => {
+    return fieldIds.has(reference) ? `{{fields.${reference}}}` : match;
+  });
 }
 
 function systemPrompt() {

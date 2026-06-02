@@ -21,8 +21,7 @@ export function createApp() {
   app.post("/node/generate", asyncRoute(async (request, response) => {
     const intent = request.body.intent;
     const project = request.body.project ?? request.body.context?.project ?? "nexus";
-    const memory = await optionalMemoryContext(intent, { project, source: "node/generate" });
-    const node = await generateNode(intent, { ...(request.body.context ?? {}), memories: memory.memories });
+    const node = await generateNode(intent, request.body.context ?? {});
     await optionalRemember({
       memory_type: "workflow",
       content: generatedNodeMemory(intent, node),

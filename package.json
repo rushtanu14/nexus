@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "NEXUS_USE_OLLAMA_EMBEDDINGS=0 NEXUS_BROWSER_VISIBLE=0 node --test tests/suite.js",
-    "model:serve": "ollama serve",
-    "model:pull": "ollama pull qwen2.5-coder:7b && ollama pull nomic-embed-text",
+    "model:serve": "if [ -x /Applications/Ollama.app/Contents/Resources/ollama ]; then /Applications/Ollama.app/Contents/Resources/ollama serve; else ollama serve; fi",
+    "model:pull": "ollama pull qwen2.5-coder:1.5b && ollama pull nomic-embed-text",
     "memory:pull": "docker pull qdrant/qdrant",
     "memory:start": "docker compose up -d qdrant",
     "memory:stop": "docker compose stop qdrant"

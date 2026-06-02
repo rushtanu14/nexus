@@ -101,6 +101,16 @@ Collection:
 nexus_memories_v1
 ```
 
+## Local Model
+
+Nexus defaults to the smaller Qwen coder model so it can run on 8 GB Macs.
+
+```bash
+npm run model:pull
+```
+
+The 7B model remains usable by setting `OLLAMA_MODEL=qwen2.5-coder:7b` when the machine has enough memory headroom.
+
 ## Development
 
 ### Native Tests

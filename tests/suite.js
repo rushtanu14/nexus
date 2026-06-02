@@ -27,6 +27,50 @@ test("generate: intent maps to valid node", async () => {
   assert(validateSchema(node));
 });
 
+test("generate: invalid model ids are replaced with UUIDs", async () => {
+  configureGenerator({ generate: async () => ({
+    id: "node-1",
+    meta: { app: "browser", category: "web", action: "extract", label: "Extract heading", source: "manual" },
+    fields: [
+      { id: "url", type: "string", required: true, label: "URL", value: "https://example.com" },
+      { id: "selector", type: "string", required: true, label: "Selector", value: "h1" },
+      { id: "attribute", type: "string", required: true, label: "Attribute", value: "text" }
+    ],
+    runner: {
+      steps: [
+        { primitive: "browser_goto", args: { url: "{{fields.url}}" } },
+        { primitive: "browser_extract", args: { selector: "{{fields.selector}}", attribute: "{{fields.attribute}}" } }
+      ],
+      output_binding: null
+    },
+    mcp: null
+  }) });
+
+  const node = await generateNode("open example.com and extract the page title", {});
+  assert.notEqual(node.id, "node-1");
+  assert(validateSchema(node));
+});
+
+test("generate: bare field bindings are qualified", async () => {
+  configureGenerator({ generate: async () => ({
+    meta: { app: "files", category: "filesystem", action: "write", label: "Write file", source: "manual" },
+    fields: [
+      { id: "path", type: "string", required: true, label: "Path", value: "/tmp/nexus-test.txt" },
+      { id: "file_content", type: "string", required: true, label: "File content", value: "hello" }
+    ],
+    runner: {
+      steps: [{ primitive: "fs_write", args: { path: "{{path}}", content: "{{file_content}}" } }],
+      output_binding: null
+    },
+    mcp: null
+  }) });
+
+  const node = await generateNode("write hello to /tmp/nexus-test.txt", {});
+  assert.equal(node.runner.steps[0].args.path, "{{fields.path}}");
+  assert.equal(node.runner.steps[0].args.content, "{{fields.file_content}}");
+  assert(validateSchema(node));
+});
+
 test("generate: unmappable intent returns error object", async () => {
   const result = await generateNode("make me a coffee", {});
   assert.equal(result.error, "cannot_map");
