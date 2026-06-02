@@ -1,59 +1,49 @@
 <div align="center">
 
-<img width="276" height="118" alt="Screenshot 2026-05-31 at 11 48 22 AM" src="https://github.com/user-attachments/assets/fffb4645-d719-4988-938a-bef235ac5283" />
+<img width="276" height="118" alt="Nexus" src="https://github.com/user-attachments/assets/fffb4645-d719-4988-938a-bef235ac5283" />
 
-<img width="743" height="462" alt="Screenshot 2026-05-31 at 3 08 27 PM" src="https://github.com/user-attachments/assets/b9fd521b-35d3-4827-99c0-bfa3358fc044" />
+developing the native macOS workspace for local workflows, agents, memory, and automation
+
+<br>
+
+<p align="center">
+  <img height="150" src="https://github.com/user-attachments/assets/93917c1c-65bd-415e-8ed2-681c5e43e7ee" />
+  <img height="150" src="https://github.com/user-attachments/assets/0faa7179-e48c-43e2-ad4d-d46a86379c49" />
+  <img height="150" src="https://github.com/user-attachments/assets/b9fd521b-35d3-4827-99c0-bfa3358fc044" />
+  <img height="150" src="https://github.com/user-attachments/assets/9ef93fdd-6f96-43b2-af54-99014ca28caa" />
+</p>
 
 </div>
 
+## Quick Start
 
-# dev notes
+### Xcode
 
-## meeting assistant concept
-
-Nexus now includes the meeting-follow-up surface: paste one block of transcript
-text, meeting notes, school tasks, errands, links, or messy plans, then Nexus
-produces a command brief with tasks, questions, resources, next-meeting context,
-and suggested local workflows. Those suggestions still flow through the Nexus
-canvas, dry run, raw-script review, and trust gates before anything runs on the
-Mac.
-
-## repo
-
-```text
-native-macos/
-  Package.swift
-  Sources/
-    LocalWorkflowStudioCore/      # workflow model, graph editing, trust state
-    LocalWorkflowStudioNative/    # SwiftUI app shell, canvas, inspector, icon
-  Tests/                          # no-framework Swift test runner
-  AppBundle/Info.plist            # packaged app metadata
-  scripts/build-app.sh            # builds dist/Nexus.app
-
-docs/
-  design/                         # visual direction and generated concept art
-  superpowers/                    # product/spec/implementation notes
+```bash
+open native-macos/Package.swift
 ```
 
-## XCODE
+Select:
 
-1. Open `native-macos/Package.swift` in Xcode.
-2. Select the `LocalWorkflowStudioNative` executable scheme.
-3. Build and run.
+```text
+LocalWorkflowStudioNative
+```
 
-## terminal
+Build and run.
+
+### Terminal
 
 ```bash
 ./run.sh
 ```
 
-no app:
+Without launching the app:
 
 ```bash
 ./run.sh --no-open
 ```
 
-## app bundle
+### App Bundle
 
 ```bash
 cd native-macos
@@ -61,47 +51,74 @@ cd native-macos
 open dist/Nexus.app
 ```
 
-The bundle script generates `AppIcon.icns` from `Sources/LocalWorkflowStudioNative/Resources/AppIcon.png`.
-
-## test
+## Local Workflow Engine
 
 ```bash
-cd native-macos
-swift run LocalWorkflowStudioNativeModelTests
-```
-
-## local workflow engine
-
-The repository also includes a Node.js workflow engine with AI-generated node shapes and deterministic local runner steps.
-
-```bash
-npm test
+npm install
 npm start
 ```
 
-The local API listens on `http://127.0.0.1:3131`. Browser click/fill, MCP calls, and AI inference use injectable adapters; filesystem, shell, HTTP, and basic browser navigation/extraction have local implementations.
+Local API:
 
-## local memory
+```text
+http://127.0.0.1:3131
+```
 
-Nexus can run local semantic memory through Qdrant. Start it with:
+Available adapters:
+
+* Browser
+* MCP
+* Filesystem
+* Shell
+* HTTP
+* AI Inference
+
+## Memory
+
+Nexus supports local semantic memory through Qdrant.
 
 ```bash
 npm run memory:pull
 npm run memory:start
 ```
 
-Qdrant listens on `http://127.0.0.1:6333`, the dashboard is at `http://127.0.0.1:6333/dashboard`, and memory persists in `./qdrant_storage`. Nexus creates the `nexus_memories_v1` collection on first memory use, stores embedded vectors with payload metadata, deduplicates before writes, and ranks retrieved memories by semantic similarity, importance, and recency. See `docs/memory/qdrant-local-memory.md` for endpoints and configuration.
+Endpoints:
 
-Node generation uses the local Ollama model `qwen2.5-coder:7b`. Install and start it with:
-
-```bash
-npm run model:pull
-npm run model:serve
+```text
+http://127.0.0.1:6333
+http://127.0.0.1:6333/dashboard
 ```
 
-With Ollama and `npm start` running, verify the same frontend/backend path used by the desktop app:
+Storage:
+
+```text
+./qdrant_storage
+```
+
+Collection:
+
+```text
+nexus_memories_v1
+```
+
+## Development
+
+### Native Tests
+
+```bash
+cd native-macos
+swift run LocalWorkflowStudioNativeModelTests
+```
+
+### Integration Tests
 
 ```bash
 cd native-macos
 swift run LocalWorkflowStudioNativeIntegrationTests
+```
+
+### Workflow Runtime
+
+```bash
+npm test
 ```
