@@ -3,10 +3,14 @@ import AppKit
 import ApplicationServices
 import LocalWorkflowStudioCore
 
+@MainActor
 struct ContentView: View {
     @Bindable var model: StudioModel
+    @Bindable var nexVoice: NexVoiceStore
     @State private var walkthroughOpen = false
     @State private var walkthroughStepIndex = 0
+    @State private var selectedSection: StudioSection = .hub
+    @State private var echoStore = EchoStore()
 
     var body: some View {
         GeometryReader { proxy in
@@ -14,8 +18,21 @@ struct ContentView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .foregroundStyle(StudioPalette.text)
+        .font(StudioType.body)
         .task {
             await model.refreshSavedNodes()
+            await model.refreshSavedWorkflows()
+            await model.refreshBrain()
+        }
+        .onChange(of: nexVoice.requestedSection) { _, section in
+            guard let section else { return }
+            switch section {
+            case "echo": selectedSection = .echo
+            case "brain": selectedSection = .brain
+            case "hub": selectedSection = .hub
+            default: selectedSection = .workflows
+            }
+            nexVoice.requestedSection = nil
         }
     }
 
@@ -31,11 +48,22 @@ struct ContentView: View {
                 }
                 Divider().overlay(StudioPalette.line)
                 HSplitView {
-                    Sidebar(model: model, compact: compact)
-                    PromptPanel(model: model, compact: compact)
-                    CanvasPanel(model: model, compact: compact)
-                    InspectorPanel(model: model, compact: compact) {
-                        requestAccessibilityPermission()
+                    Sidebar(model: model, compact: compact, selectedSection: $selectedSection)
+                    switch selectedSection {
+                    case .hub:
+                        NexusHubSurface(model: model) {
+                            selectedSection = .workflows
+                        }
+                    case .brain:
+                        NexBrainSurface(model: model)
+                    case .echo:
+                        NexEchoSurface(model: model, store: echoStore)
+                    case .workflows:
+                        PromptPanel(model: model, compact: compact)
+                        CanvasPanel(model: model, compact: compact)
+                        InspectorPanel(model: model, compact: compact) {
+                            requestAccessibilityPermission()
+                        }
                     }
                 }
                 Divider().overlay(StudioPalette.line)
@@ -54,6 +82,11 @@ struct ContentView: View {
                 )
                 .zIndex(1)
             }
+
+            if nexVoice.isVisible {
+                FloatingNexOverlay(model: model, voice: nexVoice)
+                    .zIndex(2)
+            }
         }
     }
 
@@ -68,6 +101,13 @@ struct ContentView: View {
     }
 }
 
+private enum StudioSection: String {
+    case hub = "nexus hub"
+    case workflows
+    case brain = "nex brain"
+    case echo = "nex echo"
+}
+
 private struct TitleBar: View {
     @Bindable var model: StudioModel
     var onOpenWalkthrough: () -> Void
@@ -79,7 +119,7 @@ private struct TitleBar: View {
 
             HStack(spacing: 12) {
                 Text("NEXUS")
-                    .font(.system(size: 14, weight: .heavy, design: .default))
+                    .font(StudioType.brandWordmark)
                     .tracking(2)
                     .foregroundStyle(StudioPalette.text)
                 Spacer()
@@ -218,7 +258,7 @@ private struct WalkthroughOverlay: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Label("Nexus walkthrough", systemImage: "sparkles")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.custom("Söhne", size: 13).weight(.bold))
                             .foregroundStyle(StudioPalette.accentBright)
                         Spacer()
                         Button(action: close) {
@@ -230,7 +270,7 @@ private struct WalkthroughOverlay: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Step \(stepIndex + 1) of \(steps.count)")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.custom("Söhne", size: 11).weight(.bold))
                             .foregroundStyle(StudioPalette.muted)
                         GeometryReader { proxy in
                             ZStack(alignment: .leading) {
@@ -248,16 +288,16 @@ private struct WalkthroughOverlay: View {
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
                                 .fill(StudioPalette.accentSoft)
                             Image(systemName: activeStep.icon)
-                                .font(.system(size: 24, weight: .semibold))
+                                .font(.custom("Söhne", size: 24).weight(.semibold))
                                 .foregroundStyle(StudioPalette.accentBright)
                         }
                         .frame(width: 54, height: 54)
 
                         VStack(alignment: .leading, spacing: 8) {
                             Text(activeStep.title)
-                                .font(.system(size: 23, weight: .bold))
+                                .font(.custom("Söhne", size: 23).weight(.bold))
                             Text(activeStep.detail)
-                                .font(.system(size: 14))
+                                .font(.custom("Söhne", size: 14))
                                 .foregroundStyle(StudioPalette.muted)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -266,7 +306,7 @@ private struct WalkthroughOverlay: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(activeStep.checks, id: \.self) { check in
                             Label(check, systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 13, weight: .medium))
+                                .font(.custom("Söhne", size: 13).weight(.medium))
                                 .foregroundStyle(StudioPalette.text)
                         }
                     }
@@ -305,7 +345,7 @@ private struct WalkthroughOverlay: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Map")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.custom("Söhne", size: 11).weight(.bold))
                         .foregroundStyle(StudioPalette.muted)
                     ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                         WalkthroughMapRow(
@@ -342,7 +382,7 @@ private struct WalkthroughMapRow: View {
         Button(action: select) {
             HStack(spacing: 10) {
                 Text("\(index + 1)")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.custom("Söhne", size: 11).weight(.bold))
                     .frame(width: 24, height: 24)
                     .background(active ? StudioPalette.accentBright : StudioPalette.panelStrong)
                     .foregroundStyle(active ? Color.black.opacity(0.85) : StudioPalette.muted)
@@ -350,10 +390,10 @@ private struct WalkthroughMapRow: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(step.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.custom("Söhne", size: 12).weight(.semibold))
                         .lineLimit(1)
                     Text(step.id.capitalized)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.custom("Söhne", size: 10).weight(.medium))
                         .foregroundStyle(StudioPalette.muted)
                 }
 
@@ -371,6 +411,7 @@ private struct WalkthroughMapRow: View {
 private struct Sidebar: View {
     @Bindable var model: StudioModel
     var compact: Bool
+    @Binding var selectedSection: StudioSection
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -385,20 +426,28 @@ private struct Sidebar: View {
                         .shadow(color: StudioPalette.accentBright.opacity(0.15), radius: 18, x: 0, y: 12)
                     if !compact {
                         Text("NEXUS")
-                            .font(.system(size: 13, weight: .heavy))
+                            .font(.custom("Söhne", size: 13).weight(.heavy))
                             .tracking(2)
                         Text("v0.1.0 native")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.custom("Söhne", size: 11).weight(.medium))
                             .foregroundStyle(StudioPalette.muted)
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.top, compact ? 2 : 10)
 
-                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "workflows", active: true, compact: compact)
-                SidebarButton(icon: "square.stack.3d.up", label: "your nodes", active: false, compact: compact)
-                SidebarButton(icon: "clock", label: "runs", active: false, compact: compact)
-                SidebarButton(icon: "gearshape", label: "settings", active: false, compact: compact)
+                SidebarButton(icon: "square.grid.2x2", label: "nexus hub", active: selectedSection == .hub, compact: compact) {
+                    selectedSection = .hub
+                }
+                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "nexspace", active: selectedSection == .workflows, compact: compact) {
+                    selectedSection = .workflows
+                }
+                SidebarButton(icon: "brain.head.profile", label: "nex brain", active: selectedSection == .brain, compact: compact) {
+                    selectedSection = .brain
+                }
+                SidebarButton(icon: "waveform", label: "nex echo", active: selectedSection == .echo, compact: compact) {
+                    selectedSection = .echo
+                }
 
                 Spacer()
 
@@ -417,7 +466,7 @@ private struct Sidebar: View {
                             .foregroundStyle(StudioPalette.accent)
                             .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                     }
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.custom("Söhne", size: 12).weight(.medium))
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(StudioPalette.panel)
@@ -430,6 +479,345 @@ private struct Sidebar: View {
         .frame(minWidth: compact ? 72 : 138, idealWidth: compact ? 88 : 184, maxWidth: 280)
         .layoutPriority(4)
         .clipped()
+    }
+}
+
+private struct NexusHubSurface: View {
+    @Bindable var model: StudioModel
+    var openBuilder: () -> Void
+
+    var body: some View {
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Nexus Hub")
+                                .font(StudioType.pageTitle)
+                            Text("Your automated work at a glance. Each card leads with the deliverable it must prove.")
+                                .font(StudioType.body)
+                                .foregroundStyle(StudioPalette.muted)
+                        }
+                        Spacer()
+                        if model.hasWorkflow {
+                            Button("save current workflow", action: model.saveCurrentWorkflow)
+                                .buttonStyle(SecondaryButtonStyle())
+                        }
+                        Button("build workflow", action: openBuilder)
+                            .buttonStyle(PrimaryButtonStyle())
+                    }
+
+                    if model.savedWorkflows.isEmpty {
+                        EmptySurface(icon: "square.grid.2x2", title: "No saved workflows yet", detail: "Build a workflow, name its deliverables, then save it to the Hub.")
+                            .frame(maxWidth: .infinity, minHeight: 420)
+                    } else {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 14)], spacing: 14) {
+                            ForEach(model.savedWorkflows) { saved in
+                                HubWorkflowCard(saved: saved, delete: {
+                                    model.deleteWorkflow(saved)
+                                }) {
+                                    model.loadWorkflow(saved)
+                                    openBuilder()
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(24)
+            }
+        }
+        .frame(minWidth: 760)
+    }
+}
+
+private struct HubWorkflowCard: View {
+    var saved: SavedWorkflow
+    var delete: () -> Void
+    var open: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+                HStack {
+                    Text(saved.workflow.name)
+                        .font(StudioType.cardTitle)
+                        .lineLimit(1)
+                    Spacer()
+                    Image(systemName: saved.workflow.executionOutput == nil ? "clock" : "checkmark.circle.fill")
+                        .foregroundStyle(saved.workflow.executionOutput == nil ? StudioPalette.amber : StudioPalette.accentBright)
+                    Button(action: delete) {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(IconButtonStyle())
+                }
+                ForEach(saved.workflow.nodes.prefix(4)) { node in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(node.deliverable)
+                            .font(.custom("Söhne", size: 13).weight(.semibold))
+                            .lineLimit(2)
+                        Text(node.schedule)
+                            .font(.custom("Söhne", size: 11))
+                            .foregroundStyle(StudioPalette.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(StudioPalette.panelStrong)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                Text(saved.workflow.groupedSchedule.isEmpty ? "Independent node timing" : "Grouped: \(saved.workflow.groupedSchedule)")
+                    .font(.custom("Söhne", size: 11).weight(.medium))
+                    .foregroundStyle(StudioPalette.accentBright)
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+    }
+}
+
+@MainActor
+private struct NexEchoSurface: View {
+    @Bindable var model: StudioModel
+    @Bindable var store: EchoStore
+
+    var body: some View {
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            HSplitView {
+                VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            Text("ECHOS")
+                            .font(StudioType.metadata)
+                            .tracking(1.2)
+                            .foregroundStyle(StudioPalette.muted)
+                        Spacer()
+                        Button(action: store.createEcho) {
+                            Image(systemName: "plus")
+                        }
+                        .buttonStyle(IconButtonStyle())
+                    }
+                    if store.sessions.isEmpty {
+                        Text("Start a recording to create your first echo.")
+                            .font(StudioType.secondary)
+                            .foregroundStyle(StudioPalette.muted)
+                    } else {
+                        ForEach(store.sessions) { session in
+                            Button {
+                                store.select(session)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(session.name).font(StudioType.body.weight(.medium))
+                                    Text(session.createdAt, style: .date)
+                                        .font(StudioType.metadata)
+                                        .foregroundStyle(StudioPalette.muted)
+                                }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(store.selectedID == session.id ? StudioPalette.accentSoft : StudioPalette.panel)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(16)
+                .frame(minWidth: 190, idealWidth: 230, maxWidth: 280)
+                .background(StudioPalette.sidebar)
+
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Nex Echo")
+                                .font(StudioType.pageTitle)
+                            Text("Low-latency voice transcription and polished meeting notes.")
+                                .font(StudioType.secondary)
+                                .foregroundStyle(StudioPalette.muted)
+                        }
+                        Spacer()
+                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                            Text(Self.duration(store.elapsed))
+                                .font(.custom("Berkeley Mono", size: 14).monospaced())
+                                .foregroundStyle(StudioPalette.accentBright)
+                        }
+                        Button(action: store.toggleRecording) {
+                            Label(store.transcriber.isRecording ? "stop recording" : "start recording", systemImage: store.transcriber.isRecording ? "stop.fill" : "mic.fill")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+
+                    if store.selectedSession == nil {
+                        EmptySurface(icon: "waveform", title: "Start a new echo", detail: "One click begins a named transcription session.")
+                    } else {
+                        HStack {
+                            TextField("Echo name", text: $store.sessionName)
+                                .font(StudioType.cardTitle)
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit { store.renameSelected(store.sessionName) }
+                            Button("save name") { store.renameSelected(store.sessionName) }
+                                .buttonStyle(SecondaryButtonStyle())
+                        }
+                        HSplitView {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("LIVE TRANSCRIPT").font(StudioType.metadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
+                                ScrollView {
+                                    Text(store.transcriber.isRecording ? store.transcriber.transcript : (store.selectedSession?.transcript ?? ""))
+                                        .font(StudioType.body)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .textSelection(.enabled)
+                                }
+                            }
+                            .padding(14)
+                            .background(StudioPalette.panel)
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                Text("NOTES").font(StudioType.metadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
+                                    Spacer()
+                                    Button("polish with nex") { store.polishNotes(using: model) }
+                                        .buttonStyle(SecondaryButtonStyle())
+                                }
+                                TextEditor(text: Binding(get: { store.selectedSession?.notes ?? "" }, set: { store.updateNotes($0) }))
+                                    .font(StudioType.body)
+                                    .scrollContentBackground(.hidden)
+                            }
+                            .padding(14)
+                            .background(StudioPalette.panel)
+                        }
+                        Text(store.status)
+                            .font(StudioType.secondary)
+                            .foregroundStyle(StudioPalette.muted)
+                    }
+                }
+                .padding(24)
+            }
+        }
+    }
+
+    private static func duration(_ seconds: TimeInterval) -> String {
+        String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+private struct NexBrainSurface: View {
+    @Bindable var model: StudioModel
+
+    private var catalog: [String] {
+        model.brainConfig.provider == "ollama" ? model.brainCatalog.ollama : model.brainCatalog.lmstudio
+    }
+
+    var body: some View {
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Nex Brain")
+                            .font(StudioType.pageTitle)
+                        Text("Choose the model Nex uses to turn requests into automation nodes.")
+                            .font(StudioType.body)
+                            .foregroundStyle(StudioPalette.muted)
+                    }
+
+                    VStack(alignment: .leading, spacing: 15) {
+                        BrainField(title: "Provider") {
+                            Picker("Provider", selection: Binding(
+                                get: { model.brainConfig.provider },
+                                set: { model.selectBrainProvider($0) }
+                            )) {
+                                Text("Ollama").tag("ollama")
+                                Text("LM Studio").tag("lmstudio")
+                                Text("OpenAI-compatible API").tag("openai-compatible")
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 360, alignment: .leading)
+                        }
+
+                        if model.brainConfig.provider != "openai-compatible" {
+                            BrainField(title: "Quick model picker") {
+                                Picker("Model", selection: Binding(
+                                    get: { model.brainConfig.model },
+                                    set: { model.selectBrainModel($0) }
+                                )) {
+                                    ForEach(catalog, id: \.self) { Text($0).tag($0) }
+                                }
+                                .labelsHidden()
+                                .pickerStyle(.menu)
+                                .frame(maxWidth: 360, alignment: .leading)
+                            }
+                        }
+
+                        BrainField(title: "Model name") {
+                            TextField("model identifier", text: $model.brainConfig.model)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        if model.brainConfig.provider == "openai-compatible" {
+                            BrainField(title: "API key") {
+                                SecureField("paste API key", text: $model.brainConfig.apiKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            BrainField(title: "Compatible endpoint") {
+                                TextField("https://api.openai.com/v1", text: $model.brainConfig.baseUrl)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        }
+
+                        Text(providerDetail)
+                            .font(.custom("Söhne", size: 12))
+                            .foregroundStyle(StudioPalette.muted)
+
+                        HStack {
+                            Button("save brain", action: model.saveBrain)
+                                .buttonStyle(PrimaryButtonStyle())
+                            if model.brainConfig.provider != "openai-compatible" {
+                                Button("prepare now", action: model.prepareSelectedBrain)
+                                    .buttonStyle(SecondaryButtonStyle())
+                            }
+                            Text(model.brainStatus)
+                                .font(.custom("Söhne", size: 12).weight(.medium))
+                                .foregroundStyle(StudioPalette.accentBright)
+                            Spacer()
+                            Button {
+                                Task { await model.refreshBrain() }
+                            } label: {
+                                Label("refresh", systemImage: "arrow.clockwise")
+                            }
+                            .buttonStyle(SecondaryButtonStyle())
+                        }
+                    }
+                    .padding(18)
+                    .background(StudioPalette.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+                }
+                .padding(24)
+            }
+        }
+        .frame(minWidth: 760)
+    }
+
+    private var providerDetail: String {
+        switch model.brainConfig.provider {
+        case "ollama": return "On first Nex chat, Nexus starts Ollama if needed and pulls the selected model if it is missing."
+        case "lmstudio": return "On first Nex chat, Nexus uses the installed LM Studio CLI to start the server, download the model if needed, and load it."
+        default: return "Paste a model name and key. The endpoint defaults to OpenAI and can be changed for any OpenAI-compatible provider."
+        }
+    }
+}
+
+private struct BrainField<Content: View>: View {
+    var title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title.uppercased())
+                .font(.custom("Söhne", size: 11).weight(.bold))
+                .foregroundStyle(StudioPalette.muted)
+            content
+        }
     }
 }
 
@@ -450,7 +838,7 @@ private struct SidebarButton: View {
                     Spacer()
                 }
             }
-            .font(.system(size: 14, weight: .medium))
+            .font(.custom("Söhne", size: 14).weight(.medium))
             .padding(.horizontal, compact ? 0 : 12)
             .frame(height: 42)
             .frame(maxWidth: .infinity)
@@ -473,10 +861,10 @@ private struct PromptPanel: View {
         ReactiveBackgroundContainer(color: StudioPalette.background) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("ask AI to build a workflow")
-                        .font(.system(size: 16, weight: .bold))
+                            Text("ask AI to build a workflow")
+                                .font(StudioType.cardTitle)
                     Text("generated locally with Ollama")
-                        .font(.system(size: 12))
+                        .font(StudioType.secondary)
                         .foregroundStyle(StudioPalette.muted)
                 }
 
@@ -487,32 +875,10 @@ private struct PromptPanel: View {
                     }
                 }
 
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $model.prompt)
-                        .font(.system(size: 13))
-                        .scrollContentBackground(.hidden)
-                        .padding(10)
-
-                    if model.prompt.isEmpty {
-                        Text("Describe the automation you want Nex to build")
-                            .font(.system(size: 13))
-                            .foregroundStyle(StudioPalette.muted)
-                            .padding(.horizontal, 15)
-                            .padding(.top, 12)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .frame(height: model.hasWorkflow ? 118 : 168)
-                .background(StudioPalette.panelStrong)
-                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
-
                 HStack {
-                    Button(action: model.generateWorkflow) {
-                        Label("generate canvas", systemImage: "wand.and.sparkles")
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(!model.canGenerate)
+                    Label("Use floating Nex or press Command-Shift-Space to build automations.", systemImage: "mic.fill")
+                        .font(StudioType.secondary)
+                        .foregroundStyle(StudioPalette.muted)
                     Button(action: model.dryRun) {
                         Label("dry run", systemImage: "play")
                     }
@@ -520,9 +886,9 @@ private struct PromptPanel: View {
                     .disabled(!model.hasWorkflow)
                 }
 
-                if model.hasWorkflow {
-                    Text("current automation")
-                        .font(.system(size: 11, weight: .semibold))
+                    if model.hasWorkflow {
+                        Text("current automation")
+                        .font(StudioType.metadata)
                         .foregroundStyle(StudioPalette.muted)
                         .padding(.top, 4)
 
@@ -532,7 +898,7 @@ private struct PromptPanel: View {
                 if let output = model.workflow.executionOutput {
                     VStack(alignment: .leading, spacing: 7) {
                         Label("task completed", systemImage: "checkmark.circle.fill")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.custom("Söhne", size: 12).weight(.bold))
                             .foregroundStyle(StudioPalette.accentBright)
                         Text(output)
                             .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
@@ -548,7 +914,6 @@ private struct PromptPanel: View {
 
                 Spacer()
 
-                NexPetView(model: model)
             }
             .padding(.horizontal, compact ? 14 : 20)
             .padding(.vertical, 18)
@@ -614,7 +979,7 @@ private struct CanvasPanel: View {
                 .frame(width: compact ? 320 : 368)
                 Spacer()
                 Text(model.pendingConnectionSourceID == nil ? selectedTab.guidance : "Choose an input dot to finish the connection.")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.custom("Söhne", size: 12).weight(.medium))
                     .foregroundStyle(model.pendingConnectionSourceID == nil ? StudioPalette.muted : StudioPalette.accentBright)
                     .lineLimit(1)
                 StatusPill(
@@ -687,7 +1052,7 @@ private struct CanvasPanel: View {
                                                 RoundedRectangle(cornerRadius: 3).fill(StudioPalette.accent.opacity(0.16))
                                                 RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.accentBright, lineWidth: 2)
                                                 Image(systemName: "arrow.right")
-                                                    .font(.system(size: 13, weight: .bold))
+                                                    .font(.custom("Söhne", size: 13).weight(.bold))
                                                     .foregroundStyle(StudioPalette.accentBright)
                                             }
                                             .frame(width: 42 * scale, height: 42 * scale)
@@ -760,7 +1125,7 @@ private struct CodeSurface: View {
                         VStack(alignment: .leading, spacing: 18) {
                             HStack(alignment: .center, spacing: 12) {
                                 Label("generated local script", systemImage: "chevron.left.forwardslash.chevron.right")
-                                    .font(.system(size: 16, weight: .semibold))
+                                    .font(StudioType.cardTitle)
                                 Spacer()
                                 StatusPill(
                                     label: "trust",
@@ -781,12 +1146,12 @@ private struct CodeSurface: View {
 
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Warnings".uppercased())
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.custom("Söhne", size: 11).weight(.bold))
                                     .foregroundStyle(StudioPalette.muted)
 
                                 ForEach(model.workflow.warnings, id: \.self) { warning in
                                     Label(warning, systemImage: "exclamationmark.triangle")
-                                        .font(.system(size: 12))
+                                        .font(.custom("Söhne", size: 12))
                                         .foregroundStyle(StudioPalette.amber)
                                         .padding(10)
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -797,7 +1162,7 @@ private struct CodeSurface: View {
                             }
 
                             Text("Raw scripts are visible for inspection. Nexus still uses dry-run and trust approval gates before a local run.")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.custom("Söhne", size: 12).weight(.medium))
                                 .foregroundStyle(StudioPalette.muted)
                         }
                         .padding(24)
@@ -819,7 +1184,7 @@ private struct RunsSurface: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
                         Label("local run timeline", systemImage: "clock.arrow.circlepath")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(StudioType.cardTitle)
                         Spacer()
                         StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
                     }
@@ -832,7 +1197,7 @@ private struct RunsSurface: View {
                             HStack(alignment: .top, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(log.node)
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(.custom("Söhne", size: 12).weight(.bold))
                                         .foregroundStyle(statusColor(log.status))
                                     Text(log.time, style: .time)
                                         .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
@@ -841,7 +1206,7 @@ private struct RunsSurface: View {
                                 .frame(width: 96, alignment: .leading)
 
                                 Text(log.message)
-                                    .font(.system(size: 13))
+                                    .font(.custom("Söhne", size: 13))
                                     .foregroundStyle(StudioPalette.text)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -867,7 +1232,7 @@ private struct NodesSurface: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
                         Label("your nodes", systemImage: "square.stack.3d.up")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(StudioType.cardTitle)
                         Spacer()
                         Button {
                             Task { await model.refreshSavedNodes() }
@@ -875,10 +1240,12 @@ private struct NodesSurface: View {
                             Label("refresh", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(SecondaryButtonStyle())
+                        Button("unsave all", action: model.unsaveAllNodes)
+                            .buttonStyle(SecondaryButtonStyle())
                     }
 
                     Text("Generated executable nodes saved by the local backend. Load one to inspect, trust, and run it again.")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.custom("Söhne", size: 12).weight(.medium))
                         .foregroundStyle(StudioPalette.muted)
 
                     if model.savedNodes.isEmpty {
@@ -888,15 +1255,15 @@ private struct NodesSurface: View {
                         ForEach(model.savedNodes, id: \.id) { node in
                             HStack(alignment: .top, spacing: 14) {
                                 Image(systemName: "gearshape.2")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .font(.custom("Söhne", size: 18).weight(.semibold))
                                     .foregroundStyle(StudioPalette.accentBright)
                                     .frame(width: 28)
 
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(node.meta.label)
-                                        .font(.system(size: 14, weight: .bold))
+                                        .font(.custom("Söhne", size: 14).weight(.bold))
                                     Text("\(node.meta.app) / \(node.meta.category) / \(node.runner.steps.count) step(s)")
-                                        .font(.system(size: 12))
+                                        .font(.custom("Söhne", size: 12))
                                         .foregroundStyle(StudioPalette.muted)
                                     Text(node.runner.steps.map(\.primitive).joined(separator: "  ->  "))
                                         .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
@@ -910,6 +1277,12 @@ private struct NodesSurface: View {
                                     model.loadSavedNode(node)
                                 }
                                 .buttonStyle(PrimaryButtonStyle())
+                                Button {
+                                    model.unsaveNode(node)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(IconButtonStyle())
                             }
                             .padding(14)
                             .background(StudioPalette.panel)
@@ -932,13 +1305,13 @@ private struct EmptySurface: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 28, weight: .semibold))
+                .font(.custom("Söhne", size: 28).weight(.semibold))
                 .foregroundStyle(StudioPalette.accentBright)
             Text(title)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.custom("Söhne", size: 17).weight(.semibold))
             if !detail.isEmpty {
                 Text(detail)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.custom("Söhne", size: 13).weight(.medium))
                     .foregroundStyle(StudioPalette.muted)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
@@ -960,10 +1333,10 @@ private struct InspectorPanel: View {
                 if let node = model.selectedNode {
                     HStack {
                         Label(node.title, systemImage: iconName(for: node.kind))
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(StudioType.cardTitle)
                         Spacer()
                         Text(node.status.rawValue)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.custom("Söhne", size: 11).weight(.semibold))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
                             .background(statusColor(node.status).opacity(0.18))
@@ -980,7 +1353,36 @@ private struct InspectorPanel: View {
                             InspectorSection(title: "Plain-English Summary") {
                                 Text(summary(for: node))
                                     .foregroundStyle(StudioPalette.muted)
-                                    .font(.system(size: 13))
+                                    .font(.custom("Söhne", size: 13))
+                            }
+
+                            InspectorSection(title: "Hub Deliverable") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    TextField("Node name", text: Binding(
+                                        get: { model.selectedNode?.title ?? "" },
+                                        set: { model.updateSelectedNode(title: $0) }
+                                    ))
+                                    .textFieldStyle(.roundedBorder)
+                                    TextField("What must this node prove?", text: Binding(
+                                        get: { model.selectedNode?.deliverable ?? "" },
+                                        set: { model.updateSelectedNode(deliverable: $0) }
+                                    ))
+                                    .textFieldStyle(.roundedBorder)
+                                }
+                            }
+
+                            InspectorSection(title: "Schedule") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    NodeSchedulePill(
+                                        schedule: model.selectedNode?.schedule ?? "Manual",
+                                        setDaily: model.setSelectedNodeDaily,
+                                        setOnce: model.setSelectedNodeRunOnce,
+                                        clear: model.clearSelectedNodeSchedule
+                                    )
+                                    Text(model.workflow.groupedSchedule.isEmpty ? "This node runs on its own timer." : "Workflow timing is on. This node timer is saved but temporarily disregarded.")
+                                        .font(.custom("Söhne", size: 11))
+                                        .foregroundStyle(StudioPalette.muted)
+                                }
                             }
 
                             InspectorSection(title: "Parameters") {
@@ -997,7 +1399,7 @@ private struct InspectorPanel: View {
                                     if visibleEdges.isEmpty {
                                         Text("No manual connections yet.")
                                             .foregroundStyle(StudioPalette.muted)
-                                            .font(.system(size: 12))
+                                            .font(.custom("Söhne", size: 12))
                                     } else {
                                         ForEach(visibleEdges) { edge in
                                             ConnectionRow(
@@ -1018,7 +1420,7 @@ private struct InspectorPanel: View {
                                     ForEach(model.workflow.warnings, id: \.self) { warning in
                                         Label(warning, systemImage: "exclamationmark.triangle")
                                             .foregroundStyle(StudioPalette.amber)
-                                            .font(.system(size: 12))
+                                            .font(.custom("Söhne", size: 12))
                                     }
                                 }
                             }
@@ -1060,6 +1462,14 @@ private struct InspectorPanel: View {
                     Divider().overlay(StudioPalette.line)
 
                     VStack(spacing: 10) {
+                        HStack {
+                            Button("delete selected node", action: model.deleteSelectedCanvasNode)
+                                .buttonStyle(SecondaryButtonStyle())
+                            Button("clear canvas", action: model.clearCanvas)
+                                .buttonStyle(SecondaryButtonStyle())
+                        }
+                        Button("save workflow to hub", action: model.saveCurrentWorkflow)
+                            .buttonStyle(SecondaryButtonStyle())
                         Button(action: model.approveVersion) {
                             Label(model.approvalRequired ? "trust this version" : "trusted version", systemImage: model.approvalRequired ? "touchid" : "checkmark.shield")
                         }
@@ -1121,11 +1531,33 @@ private struct LogDrawer: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("local run logs")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.custom("Söhne", size: 13).weight(.semibold))
                     Spacer()
+                    HStack(spacing: 8) {
+                        Toggle("workflow timer", isOn: Binding(
+                            get: { !model.workflow.groupedSchedule.isEmpty },
+                            set: { enabled in
+                                if enabled {
+                                    model.setWorkflowDaily(Date())
+                                } else {
+                                    model.clearWorkflowSchedule()
+                                }
+                            }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .font(.custom("Söhne", size: 11).weight(.semibold))
+                        NodeSchedulePill(
+                            schedule: model.workflow.groupedSchedule.isEmpty ? "Daily at \(Self.timeFormatter.string(from: Date()))" : model.workflow.groupedSchedule,
+                            setDaily: model.setWorkflowDaily,
+                            setOnce: model.setWorkflowRunOnce,
+                            clear: model.clearWorkflowSchedule
+                        )
+                        .disabled(model.workflow.groupedSchedule.isEmpty)
+                    }
                     Text("Stored locally")
                         .foregroundStyle(StudioPalette.muted)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.custom("Söhne", size: 11).weight(.medium))
                 }
                 ScrollView {
                     VStack(spacing: 6) {
@@ -1157,6 +1589,94 @@ private struct LogDrawer: View {
         }
         .frame(height: 132)
         .clipped()
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
+}
+
+private enum ScheduleCadence: String, CaseIterable, Identifiable {
+    case daily = "Daily"
+    case once = "Once"
+
+    var id: String { rawValue }
+}
+
+private struct NodeSchedulePill: View {
+    var schedule: String
+    var setDaily: (Date) -> Void
+    var setOnce: (Date) -> Void
+    var clear: () -> Void
+    @State private var cadence: ScheduleCadence = .daily
+    @State private var date = Date()
+    @State private var popoverOpen = false
+
+    var body: some View {
+        Button {
+            popoverOpen.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "clock")
+                Text(displaySchedule)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.custom("Söhne", size: 10).weight(.bold))
+            }
+            .font(.custom("Söhne", size: 12).weight(.semibold))
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .background(StudioPalette.panelStrong)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(StudioPalette.line))
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $popoverOpen, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Schedule")
+                    .font(.custom("Söhne", size: 15).weight(.semibold))
+                Picker("Schedule", selection: $cadence) {
+                    ForEach(ScheduleCadence.allCases) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                DatePicker(cadence == .daily ? "Time" : "Date and time", selection: $date)
+                    .datePickerStyle(.compact)
+                HStack {
+                    Button("off", action: {
+                        clear()
+                        popoverOpen = false
+                    })
+                    .buttonStyle(SecondaryButtonStyle())
+                    Spacer()
+                    Button("apply", action: {
+                        if cadence == .daily {
+                            setDaily(date)
+                        } else {
+                            setOnce(date)
+                        }
+                        popoverOpen = false
+                    })
+                    .buttonStyle(PrimaryButtonStyle())
+                }
+            }
+            .padding(14)
+            .frame(width: 250)
+            .background(StudioPalette.panel)
+        }
+    }
+
+    private var displaySchedule: String {
+        if schedule == "Manual" || schedule.isEmpty { return "Off" }
+        if schedule.hasPrefix("Every day at ") {
+            return "Daily at \(schedule.dropFirst("Every day at ".count))"
+        }
+        if schedule.hasPrefix("Once: ") { return "Once" }
+        return schedule
     }
 }
 
@@ -1224,20 +1744,20 @@ private struct NodeCard: View {
         ZStack {
             VStack(spacing: 8) {
                 Image(systemName: iconName(for: node.kind))
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.custom("Söhne", size: 20).weight(.semibold))
                     .foregroundStyle(statusColor(node.status))
                 Text(node.title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.custom("Söhne", size: 13).weight(.semibold))
                     .foregroundStyle(StudioPalette.text)
                 Text(node.subtitle)
-                    .font(.system(size: 10))
+                    .font(.custom("Söhne", size: 10))
                     .foregroundStyle(StudioPalette.muted)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                 RoundedRectangle(cornerRadius: 2)
                     .fill(statusColor(node.status))
                     .frame(width: 16, height: 16)
-                    .overlay(Image(systemName: node.status == .warning ? "exclamationmark" : "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.black.opacity(0.7)))
+                    .overlay(Image(systemName: node.status == .warning ? "exclamationmark" : "checkmark").font(.custom("Söhne", size: 8).weight(.bold)).foregroundStyle(.black.opacity(0.7)))
             }
             .padding(12)
             .frame(width: 136, height: 104)
@@ -1280,7 +1800,7 @@ private struct ConnectorButton: View {
                 RoundedRectangle(cornerRadius: 3).fill(StudioPalette.canvas)
                 RoundedRectangle(cornerRadius: 3).stroke(color.opacity(0.9), lineWidth: 1.5)
                 Image(systemName: systemName)
-                    .font(.system(size: 8, weight: .heavy))
+                    .font(.custom("Söhne", size: 8).weight(.heavy))
                     .foregroundStyle(color)
             }
             .frame(width: 22, height: 22)
@@ -1315,7 +1835,7 @@ private struct EdgeDeleteButton: View {
                 RoundedRectangle(cornerRadius: 3).fill(StudioPalette.canvas.opacity(0.96))
                 RoundedRectangle(cornerRadius: 3).stroke(isFallback ? StudioPalette.amber : StudioPalette.accentBright, lineWidth: isHovering ? 2 : 1.4)
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .heavy))
+                    .font(.custom("Söhne", size: 8).weight(.heavy))
                     .foregroundStyle(isHovering ? StudioPalette.text : StudioPalette.muted)
             }
             .frame(width: isHovering ? 26 : 22, height: isHovering ? 26 : 22)
@@ -1536,10 +2056,10 @@ private struct Bubble: View {
     var body: some View {
         VStack(alignment: alignRight ? .trailing : .leading, spacing: 6) {
             Text(sender)
-                .font(.system(size: 10, weight: .bold))
+                .font(.custom("Söhne", size: 10).weight(.bold))
                 .foregroundStyle(StudioPalette.muted)
             Text(text)
-                .font(.system(size: 13))
+                .font(.custom("Söhne", size: 13))
                 .foregroundStyle(StudioPalette.text)
         }
         .padding(12)
@@ -1559,8 +2079,8 @@ private struct AutomationRow: View {
         HStack {
             RoundedRectangle(cornerRadius: 1).fill(active ? StudioPalette.accent : StudioPalette.muted).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .semibold))
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(StudioPalette.muted)
+                Text(title).font(.custom("Söhne", size: 13).weight(.semibold))
+                Text(subtitle).font(.custom("Söhne", size: 11)).foregroundStyle(StudioPalette.muted)
             }
             Spacer()
         }
@@ -1578,7 +2098,7 @@ private struct InspectorSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title.uppercased())
-                .font(.system(size: 11, weight: .bold))
+                .font(.custom("Söhne", size: 11).weight(.bold))
                 .tracking(0.5)
                 .foregroundStyle(StudioPalette.muted)
             content
@@ -1600,10 +2120,10 @@ private struct ConnectionRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("\(fromTitle) -> \(toTitle)")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.custom("Söhne", size: 12).weight(.semibold))
                     .lineLimit(1)
                 Text(edge.isFallback ? "Fallback path" : "Main path")
-                    .font(.system(size: 11))
+                    .font(.custom("Söhne", size: 11))
                     .foregroundStyle(StudioPalette.muted)
             }
 
@@ -1611,7 +2131,7 @@ private struct ConnectionRow: View {
 
             Button(action: remove) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.custom("Söhne", size: 10).weight(.bold))
             }
             .buttonStyle(IconButtonStyle())
             .frame(width: 30, height: 30)
@@ -1633,7 +2153,7 @@ private struct ParameterRow: View {
             Spacer()
             Text(value).fontWeight(.medium)
         }
-        .font(.system(size: 12))
+        .font(.custom("Söhne", size: 12))
         .padding(10)
         .background(StudioPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
@@ -1646,7 +2166,7 @@ private struct ImpactRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(item.action.uppercased())
-                .font(.system(size: 10, weight: .bold))
+                .font(.custom("Söhne", size: 10).weight(.bold))
                 .foregroundStyle(StudioPalette.accentBright)
             Text(item.source)
                 .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
@@ -1750,13 +2270,13 @@ private struct NexPetView: View {
             .onHover { isHovering = $0 }
 
             Text("NEX")
-                .font(.system(size: 11, weight: .heavy))
+                .font(StudioType.brandWordmark)
                 .tracking(2)
                 .foregroundStyle(StudioPalette.accentBright)
                 .padding(.top, 4)
 
             Text(statusMessage)
-                .font(.system(size: 11, weight: .medium))
+                .font(StudioType.secondary)
                 .foregroundStyle(StudioPalette.text)
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
@@ -1819,13 +2339,151 @@ private struct NexPetView: View {
     }
 }
 
+@MainActor
+private struct FloatingNexOverlay: View {
+    @Bindable var model: StudioModel
+    @Bindable var voice: NexVoiceStore
+    @State private var offset = CGSize(width: 430, height: 250)
+    @State private var dragOrigin = CGSize(width: 430, height: 250)
+    @State private var petScale: CGFloat = 0.58
+    @State private var petScaleOrigin: CGFloat = 0.58
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(voice.transcriber.isRecording ? (voice.transcriber.transcript.isEmpty ? "Listening..." : voice.transcriber.transcript) : voice.response)
+                    .font(StudioType.body)
+                    .foregroundStyle(StudioPalette.text)
+                    .padding(10)
+                    .frame(width: 240, alignment: .leading)
+                    .background(StudioPalette.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+                Button {
+                    voice.isVisible = false
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(IconButtonStyle())
+            }
+            HStack(spacing: 8) {
+                Button {
+                    voice.toggle(using: model)
+                } label: {
+                    Image(systemName: voice.transcriber.isRecording ? "stop.fill" : "mic.fill")
+                }
+                .buttonStyle(IconButtonStyle())
+                ZStack(alignment: .bottomTrailing) {
+                    FloatingAnimatedNexPet(model: model, voice: voice, petScale: petScale)
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.custom("Söhne", size: 10).weight(.bold))
+                        .foregroundStyle(StudioPalette.accentBright)
+                        .padding(4)
+                        .background(StudioPalette.panel)
+                        .clipShape(Circle())
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    petScale = min(max(petScaleOrigin + value.translation.width / 320, 0.22), 0.9)
+                                }
+                                .onEnded { _ in petScaleOrigin = petScale }
+                        )
+                }
+            }
+        }
+        .padding(10)
+        .background(StudioPalette.panel.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .offset(offset)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    offset = CGSize(width: dragOrigin.width + value.translation.width, height: dragOrigin.height + value.translation.height)
+                }
+                .onEnded { _ in dragOrigin = offset }
+        )
+    }
+}
+
+@MainActor
+private struct FloatingAnimatedNexPet: View {
+    @Bindable var model: StudioModel
+    @Bindable var voice: NexVoiceStore
+    var petScale: CGFloat
+    @State private var currentFrame = 0
+    @State private var activeRow = 0
+    @State private var isWaving = false
+    @State private var waveTimer: Timer?
+    @State private var isHovering = false
+
+    private let timer = Timer.publish(every: 0.18, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        NexPetFrameView(col: currentFrame, row: activeRow, scale: petScale)
+            .frame(width: 192 * petScale, height: 208 * petScale)
+            .scaleEffect(isHovering ? 1.06 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovering)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isWaving = true
+                currentFrame = 0
+                activeRow = 3
+                waveTimer?.invalidate()
+                waveTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { _ in
+                    Task { @MainActor in isWaving = false }
+                }
+            }
+            .onHover { isHovering = $0 }
+            .onReceive(timer) { _ in
+                let row = animationRow
+                if row != activeRow {
+                    activeRow = row
+                    currentFrame = 0
+                } else {
+                    currentFrame = (currentFrame + 1) % frameCount(for: row)
+                }
+            }
+    }
+
+    private var animationRow: Int {
+        if isWaving { return 3 }
+        if voice.transcriber.isRecording { return 7 }
+        if model.isGenerating || model.runnerStatus == "Generating" { return 6 }
+        if model.isRunning || model.runnerStatus == "Running" { return 7 }
+        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" { return 5 }
+        if model.runnerStatus == "Complete" { return 4 }
+        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return 8 }
+        return 0
+    }
+
+    private func frameCount(for row: Int) -> Int {
+        switch row {
+        case 3: return 4
+        case 4: return 5
+        case 5: return 8
+        default: return 6
+        }
+    }
+}
+
+enum StudioType {
+    static let brandWordmark = Font.custom("Canela", size: 14, relativeTo: .body).weight(.bold)
+    static let pageTitle = Font.custom("Canela", size: 32, relativeTo: .largeTitle).weight(.bold)
+    static let sectionTitle = Font.custom("Söhne", size: 24, relativeTo: .title).weight(.semibold)
+    static let cardTitle = Font.custom("Söhne", size: 18, relativeTo: .headline).weight(.semibold)
+    static let body = Font.custom("Söhne", size: 14, relativeTo: .body).weight(.regular)
+    static let secondary = Font.custom("Söhne", size: 12, relativeTo: .subheadline).weight(.regular)
+    static let metadata = Font.custom("Söhne", size: 11, relativeTo: .caption).weight(.medium)
+    static let button = Font.custom("Söhne", size: 14, relativeTo: .body).weight(.medium)
+}
+
 // MARK: - Button Styles — Geometric / Angular
 
 private struct CanvasTabButtonStyle: ButtonStyle {
     var isSelected: Bool
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11, weight: .semibold))
+            .font(.custom("Söhne", size: 11).weight(.semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.85)
             .padding(.horizontal, 6)
@@ -1841,7 +2499,7 @@ private struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .bold))
+            .font(StudioType.button)
             .padding(.horizontal, 14)
             .frame(height: 36)
             .frame(maxWidth: .infinity)
@@ -1857,7 +2515,7 @@ private struct SecondaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(StudioType.button)
             .padding(.horizontal, 14)
             .frame(height: 36)
             .frame(maxWidth: .infinity)
@@ -1873,7 +2531,7 @@ private struct TrustButtonStyle: ButtonStyle {
     var disabledLook: Bool
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .bold))
+            .font(.custom("Söhne", size: 13).weight(.bold))
             .padding(.horizontal, 14)
             .frame(height: 38)
             .frame(maxWidth: .infinity)
@@ -1903,7 +2561,7 @@ private struct StatusPill: View {
             Text(label + ":").foregroundStyle(StudioPalette.muted)
             Text(value)
         }
-        .font(.system(size: 12, weight: .semibold))
+        .font(.custom("Söhne", size: 12).weight(.semibold))
         .padding(.horizontal, 10)
         .frame(height: 30)
         .background(StudioPalette.panel)
