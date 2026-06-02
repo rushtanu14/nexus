@@ -26,7 +26,22 @@
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Nexus records audio only when you start an Echo or speak to Nex.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Nexus transcribes Echos and voice commands into text.</string>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
+  <key>ATSApplicationFontsPath</key>
+  <string>.</string>
+  <key>UIAppFonts</key>
+  <array>
+    <string>Canela-Regular.otf</string>
+    <string>Canela-Bold.otf</string>
+    <string>Sohne-Regular.otf</string>
+    <string>Sohne-Bold.otf</string>
+    <string>BerkeleyMono-Regular.otf</string>
+    <string>BerkeleyMono-Bold.otf</string>
+  </array>
 </dict>
 </plist>

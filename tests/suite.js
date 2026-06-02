@@ -207,6 +207,60 @@ test("api: life plan endpoint returns suggested automations", async () => {
   }
 });
 
+test("api: Nex completion uses and updates local memory", async () => {
+  const qdrant = await startFakeQdrant();
+  let receivedMessages = [];
+  const model = http.createServer(async (request, response) => {
+    const body = await readJsonBody(request);
+    receivedMessages = body.messages ?? [];
+    sendJson(response, 200, { message: { content: "Use the local-first preference." } });
+  });
+  await new Promise((resolve) => model.listen(0, "127.0.0.1", resolve));
+  const modelPort = model.address().port;
+  const previous = {
+    qdrant: process.env.NEXUS_QDRANT_URL,
+    collection: process.env.NEXUS_MEMORY_COLLECTION,
+    ollama: process.env.OLLAMA_BASE_URL
+  };
+  process.env.NEXUS_QDRANT_URL = qdrant.url;
+  process.env.NEXUS_MEMORY_COLLECTION = "assistant_memories";
+  process.env.OLLAMA_BASE_URL = `http://127.0.0.1:${modelPort}`;
+
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const store = createMemoryStore({ url: qdrant.url, collectionName: "assistant_memories", vectorSize: 384 });
+    await store.remember({
+      memory_type: "user_preference",
+      content: "The user prefers local-first assistant behavior.",
+      source: "qa",
+      importance: 0.95,
+      project: "nexus",
+      tags: ["assistant", "privacy"]
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/nex/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "What assistant behavior do I prefer?", brain: { provider: "ollama", model: "test-model", baseUrl: `http://127.0.0.1:${modelPort}` } })
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.completion, "Use the local-first preference.");
+    assert(receivedMessages[0].content.includes("The user prefers local-first assistant behavior."));
+    assert.equal(qdrant.state.pointsFor("assistant_memories").size, 3);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => model.close(resolve));
+    await qdrant.stop();
+    restoreEnv("NEXUS_QDRANT_URL", previous.qdrant);
+    restoreEnv("NEXUS_MEMORY_COLLECTION", previous.collection);
+    restoreEnv("OLLAMA_BASE_URL", previous.ollama);
+  }
+});
+
 test("memory: ensures local qdrant collection and payload indexes", async () => {
   const qdrant = await startFakeQdrant();
   try {
@@ -418,6 +472,11 @@ async function readJsonBody(request) {
 function sendJson(response, status, body) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+function restoreEnv(key, value) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
 }
 
 function matchesQdrantFilter(payload, filter) {
