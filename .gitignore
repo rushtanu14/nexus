@@ -8,3 +8,4 @@ DerivedData/
 *.swiftpm/
 .nexus-data/
 node_modules/
+qdrant_storage/

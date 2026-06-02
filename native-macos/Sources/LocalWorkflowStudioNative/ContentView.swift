@@ -78,12 +78,12 @@ private struct TitleBar: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 12) {
-                Text("NEXUS LIFE")
+                Text("NEXUS")
                     .font(.system(size: 14, weight: .heavy, design: .default))
-                    .tracking(1.2)
+                    .tracking(2)
                     .foregroundStyle(StudioPalette.text)
                 Spacer()
-                StatusPill(label: "assistant", value: model.lifePlan == nil ? "listening" : "briefed", color: model.lifePlan == nil ? StudioPalette.muted : StudioPalette.accent)
+                StatusPill(label: "meeting", value: model.lifePlan == nil ? "ready" : "briefed", color: model.lifePlan == nil ? StudioPalette.muted : StudioPalette.accent)
                 StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
                 StatusPill(label: "permissions", value: model.workflow.accessibilityRequested ? "requested" : "local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.accent)
                 Button(action: onOpenWalkthrough) {
@@ -135,12 +135,12 @@ private struct WalkthroughStep: Identifiable {
         WalkthroughStep(
             id: "prompt",
             icon: "wand.and.sparkles",
-            title: "Paste your life context",
-            detail: "Start with meeting notes, school tasks, errands, links, or messy plans. Nexus turns the intake into a command brief before building any workflow.",
+            title: "Paste a transcript",
+            detail: "Start with meeting transcripts, notes, school tasks, links, or messy plans. Nexus turns the intake into a command brief before building any workflow.",
             checks: [
                 "Paste one block of context",
-                "Plan Life creates the brief",
-                "Build Workflow converts one suggestion into a canvas"
+                "Plan creates the brief",
+                "Build converts one suggestion into a canvas"
             ]
         ),
         WalkthroughStep(
@@ -385,10 +385,10 @@ private struct Sidebar: View {
                         .clipShape(RoundedRectangle(cornerRadius: compact ? 6 : 12, style: .continuous))
                         .shadow(color: StudioPalette.accentBright.opacity(0.15), radius: 18, x: 0, y: 12)
                     if !compact {
-                        Text("NEXUS LIFE")
+                        Text("NEXUS")
                             .font(.system(size: 13, weight: .heavy))
-                            .tracking(1.2)
-                        Text("personal assistant")
+                            .tracking(2)
+                        Text("meeting assistant")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(StudioPalette.muted)
                     }
@@ -396,8 +396,8 @@ private struct Sidebar: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, compact ? 2 : 10)
 
-                SidebarButton(icon: "tray.full", label: "life inbox", active: true, compact: compact)
-                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "automations", active: false, compact: compact)
+                SidebarButton(icon: "tray.full", label: "meeting inbox", active: true, compact: compact)
+                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "workflow builder", active: false, compact: compact)
                 SidebarButton(icon: "clock", label: "runs", active: false, compact: compact)
                 SidebarButton(icon: "gearshape", label: "settings", active: false, compact: compact)
 
@@ -407,10 +407,10 @@ private struct Sidebar: View {
                     Image(systemName: "circle.fill")
                         .foregroundStyle(StudioPalette.accent)
                         .frame(maxWidth: .infinity)
-                        .help("assistant local")
+                        .help("runner local")
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("assistant local", systemImage: "circle.fill")
+                        Label("runner local", systemImage: "circle.fill")
                             .foregroundStyle(StudioPalette.accent)
                         Text("workspace")
                             .foregroundStyle(StudioPalette.muted)
@@ -474,9 +474,9 @@ private struct PromptPanel: View {
         ReactiveBackgroundContainer(color: StudioPalette.background) {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("life command inbox")
+                    Text("meeting command inbox")
                         .font(.system(size: 16, weight: .bold))
-                    Text("paste notes, tasks, dates, links, or plans")
+                    Text("paste transcripts, notes, dates, links, or plans")
                         .font(.system(size: 12))
                         .foregroundStyle(StudioPalette.muted)
                 }
@@ -497,7 +497,7 @@ private struct PromptPanel: View {
                         .padding(10)
 
                     if model.prompt.isEmpty {
-                        Text("Paste meeting notes, school tasks, errands, links, or a messy plan")
+                        Text("Paste a transcript, meeting notes, tasks, links, or a messy plan")
                             .font(.system(size: 13))
                             .foregroundStyle(StudioPalette.muted)
                             .padding(.horizontal, 15)
@@ -510,23 +510,26 @@ private struct PromptPanel: View {
                 .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
 
-                HStack {
-                    Button(action: model.createLifePlan) {
-                        Label(model.isPlanning ? "planning" : "plan life", systemImage: "sparkles")
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .disabled(!model.canCreateLifePlan)
-                    Button(action: {
-                        if model.lifePlan == nil {
-                            model.generateWorkflow()
-                        } else {
-                            model.buildWorkflowFromLifePlan()
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button(action: model.createLifePlan) {
+                            Label(model.isPlanning ? "planning" : "plan", systemImage: "sparkles")
                         }
-                    }) {
-                        Label(model.lifePlan == nil ? "generate canvas" : "build workflow", systemImage: "point.3.connected.trianglepath.dotted")
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(!model.canCreateLifePlan)
+                        Button(action: {
+                            if model.lifePlan == nil {
+                                model.generateWorkflow()
+                            } else {
+                                model.buildWorkflowFromLifePlan()
+                            }
+                        }) {
+                            Label(model.lifePlan == nil ? "generate" : "build flow", systemImage: "point.3.connected.trianglepath.dotted")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(model.lifePlan == nil ? !model.canGenerate : model.topAutomationIntent == nil)
                     }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(model.lifePlan == nil ? !model.canGenerate : model.topAutomationIntent == nil)
+
                     Button(action: model.dryRun) {
                         Label("dry run", systemImage: "play")
                     }
@@ -540,7 +543,7 @@ private struct PromptPanel: View {
                         .foregroundStyle(StudioPalette.muted)
                         .padding(.top, 4)
 
-                    AutomationRow(title: model.workflow.name, subtitle: "Generated from assistant context", active: true)
+                    AutomationRow(title: model.workflow.name, subtitle: "Generated from meeting context", active: true)
                 }
 
                 if let output = model.workflow.executionOutput {
@@ -562,7 +565,7 @@ private struct PromptPanel: View {
 
                 Spacer()
 
-                NexPetView(model: model)
+                AssistantPetsView(model: model)
             }
             .padding(.horizontal, compact ? 14 : 20)
             .padding(.vertical, 18)
@@ -746,8 +749,8 @@ private struct CanvasPanel: View {
                                     WarpingGridBackground(nodes: [])
                                     EmptySurface(
                                         icon: "point.3.connected.trianglepath.dotted",
-                                        title: "Life Canvas",
-                                        detail: "plan your day, then approve local workflows"
+                                        title: "Nexus Canvas",
+                                        detail: "turn meeting context into approved local workflows"
                                     )
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -929,7 +932,7 @@ private struct RunsSurface: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .center, spacing: 12) {
-                        Label("assistant run timeline", systemImage: "clock.arrow.circlepath")
+                        Label("workflow run timeline", systemImage: "clock.arrow.circlepath")
                             .font(.system(size: 16, weight: .semibold))
                         Spacer()
                         StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
@@ -1231,7 +1234,7 @@ private struct LogDrawer: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("assistant run logs")
+                    Text("workflow run logs")
                         .font(.system(size: 13, weight: .semibold))
                     Spacer()
                     Text("Stored locally")
@@ -1241,7 +1244,7 @@ private struct LogDrawer: View {
                 ScrollView {
                     VStack(spacing: 6) {
                         if model.logs.isEmpty {
-                            Text("No assistant runs yet.")
+                            Text("No workflow runs yet.")
                                 .font(.custom("Berkeley Mono", size: 11, relativeTo: .caption).monospaced())
                                 .foregroundStyle(StudioPalette.muted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1807,7 +1810,7 @@ enum PetAssets {
     }
 }
 
-// MARK: - Nex — the automation builder mascot
+// MARK: - Assistant pets
 
 private struct NexPetFrameView: View {
     let col: Int
@@ -1829,7 +1832,7 @@ private struct NexPetFrameView: View {
     }
 }
 
-private struct NexPetView: View {
+private struct AssistantPetsView: View {
     @Bindable var model: StudioModel
     @State private var currentFrame = 0
     @State private var activeRow = 0
@@ -1841,14 +1844,20 @@ private struct NexPetView: View {
     let petScale: CGFloat = 0.55
 
     var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(spacing: 4) {
                 NexPetFrameView(col: currentFrame, row: activeRow, scale: petScale)
                     .frame(width: 192 * petScale, height: 208 * petScale)
                     .scaleEffect(isHovering ? 1.06 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovering)
+
+                Text("NEX")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(1.6)
+                    .foregroundStyle(StudioPalette.accentBright)
             }
             .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
             .onTapGesture {
                 isWaving = true
                 currentFrame = 0
@@ -1859,25 +1868,15 @@ private struct NexPetView: View {
                 }
             }
             .onHover { isHovering = $0 }
+            .help("Tap Nex")
 
-            Text("NEX")
-                .font(.system(size: 11, weight: .heavy))
-                .tracking(2)
-                .foregroundStyle(StudioPalette.accentBright)
-                .padding(.top, 4)
+            PetSpeechBubble(title: speechTitle, message: statusMessage, highlighted: isHovering)
 
-            Text(statusMessage)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(StudioPalette.text)
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(StudioPalette.panel)
-                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(isHovering ? StudioPalette.accentBright.opacity(0.4) : StudioPalette.line, lineWidth: 1))
-                .padding(.top, 6)
+            HStack(spacing: 8) {
+                PetStatusBuddy(label: "plan", row: 4, col: 1, active: model.isPlanning || model.lifePlan != nil)
+                PetStatusBuddy(label: "build", row: 8, col: 2, active: model.isGenerating || model.hasWorkflow)
+                PetStatusBuddy(label: "run", row: 7, col: 0, active: model.isRunning || model.runnerStatus == "Complete")
+            }
         }
         .padding(12)
         .background(
@@ -1897,23 +1896,35 @@ private struct NexPetView: View {
         }
     }
 
+    private var speechTitle: String {
+        if model.isPlanning || model.runnerStatus == "Planning" { return "sorting inbox" }
+        if model.isGenerating || model.runnerStatus == "Generating" { return "building workflow" }
+        if model.isRunning || model.runnerStatus == "Running" { return "running locally" }
+        if model.lifePlan != nil && !model.hasWorkflow { return "brief ready" }
+        if model.approvalRequired { return "needs trust" }
+        return "personal assistant"
+    }
+
     private var statusMessage: String {
-        if isWaving { return "oh good, you're here" }
-        if model.isGenerating || model.runnerStatus == "Generating" { return "hold on, i'm doing my little thinking dance..." }
-        if model.isRunning || model.runnerStatus == "Running" { return "okay okay it's happening, watch the nodes light up!" }
-        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" { return "well that was embarrassing" }
-        if model.runnerStatus == "Complete" { return "boom. nailed it." }
-        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return "looks pretty good, trust me" }
-        return "chilling... just tell me what chaos we're automating today"
+        if isWaving { return "I'm here. Drop the messy notes and I'll keep the thread together." }
+        if model.isPlanning || model.runnerStatus == "Planning" { return "Sorting tasks, links, questions, and the first thing I can automate." }
+        if model.isGenerating || model.runnerStatus == "Generating" { return "Building the local workflow now. Scripts stay visible before anything runs." }
+        if model.isRunning || model.runnerStatus == "Running" { return "Running the trusted steps. Logs stay local so you can inspect what happened." }
+        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" || model.runnerStatus == "Planning failed" { return "That hit a snag. The log below has the exact error." }
+        if model.runnerStatus == "Complete" { return "Done. The result and the local run log are both saved here." }
+        if let plan = model.lifePlan, !model.hasWorkflow { return "I found \(plan.tasks.count) task(s) and \(plan.automations.count) automation idea(s). Pick one and I'll wire it up." }
+        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return "Review this exact version, then trust it before it touches files or apps." }
+        return "Paste the messy context. I'll turn it into a small plan, then a workflow."
     }
 
     private func currentAnimationRow() -> Int {
         if isWaving { return 3 }
+        if model.isPlanning || model.runnerStatus == "Planning" { return 6 }
         if model.isGenerating || model.runnerStatus == "Generating" { return 6 }
         if model.isRunning || model.runnerStatus == "Running" { return 7 }
-        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" { return 5 }
+        if model.runnerStatus == "Failed" || model.runnerStatus == "Generation failed" || model.runnerStatus == "Planning failed" { return 5 }
         if model.runnerStatus == "Complete" { return 4 }
-        if model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return 8 }
+        if model.lifePlan != nil || model.approvalRequired || model.runnerStatus == "Generated" || model.runnerStatus == "Loaded" { return 8 }
         return 0
     }
 
@@ -1927,6 +1938,80 @@ private struct NexPetView: View {
         case 6, 7, 8: return 6
         default: return 6
         }
+    }
+}
+
+private struct PetSpeechBubble: View {
+    var title: String
+    var message: String
+    var highlighted: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(StudioPalette.accentBright)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(StudioPalette.text)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(4)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudioPalette.panelStrong)
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(highlighted ? StudioPalette.accentBright.opacity(0.4) : StudioPalette.line, lineWidth: 1)
+        )
+        .overlay(alignment: .topLeading) {
+            SpeechBubbleTail()
+                .fill(StudioPalette.panelStrong)
+                .frame(width: 11, height: 16)
+                .offset(x: 52, y: -10)
+        }
+    }
+}
+
+private struct SpeechBubbleTail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct PetStatusBuddy: View {
+    var label: String
+    var row: Int
+    var col: Int
+    var active: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            NexPetFrameView(col: col, row: row, scale: 0.19)
+                .frame(width: 36, height: 38)
+                .scaleEffect(active ? 1.0 : 0.92)
+                .opacity(active ? 1.0 : 0.52)
+
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(active ? StudioPalette.accentBright : StudioPalette.muted)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 7)
+        .frame(height: 42)
+        .frame(maxWidth: .infinity)
+        .background(active ? StudioPalette.accentSoft : StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(active ? StudioPalette.accent.opacity(0.55) : StudioPalette.line, lineWidth: 1))
     }
 }
 
@@ -1953,6 +2038,8 @@ private struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .bold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .padding(.horizontal, 14)
             .frame(height: 36)
             .frame(maxWidth: .infinity)
@@ -1969,6 +2056,8 @@ private struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .padding(.horizontal, 14)
             .frame(height: 36)
             .frame(maxWidth: .infinity)

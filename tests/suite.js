@@ -5,6 +5,7 @@ import test from "node:test";
 import { executeNode } from "../src/executor.js";
 import { configureGenerator, generateNode, getGenerationCount, resetGenerationCount } from "../src/generator.js";
 import { createLifePlan } from "../src/life-assistant.js";
+import { createMemoryStore } from "../src/memory-store.js";
 import { clearServers, registerServer, scrapeServer } from "../src/mcp-registry.js";
 import { validateNode, validateSchema } from "../src/node-schema.js";
 import { clearNodes, findNode, saveNode } from "../src/node-store.js";
@@ -158,8 +159,31 @@ Prepare the homecoming task list before Friday.`);
   assert(plan.questions.some((question) => question.text.includes("decoration budget")));
   assert.equal(plan.nextMeeting.dateText, "June 3, 2026");
   assert(plan.automations[0].intent.includes("write a string"));
+  assert(plan.automations.some((automation) => automation.id === "automation-calendar-draft"));
+  assert(plan.automations.some((automation) => automation.id === "automation-gmail-draft"));
   assert(plan.automations.some((automation) => automation.id === "automation-open-resource"));
   assert(plan.warnings.some((warning) => warning.includes("dry run")));
+});
+
+test("life: transcript paste ignores template noise and keeps follow-up actions", () => {
+  const plan = createLifePlan(`NOTICE OF MEETING
+Meeting transcript:
+Minutes recorder: Rushil
+Present: Class officers
+\u2022 Alex - reviewed decoration ideas
+\u2022 I need to send the sponsor recap by tonight.
+\u2022 Question: Who approves the room request?
+\u2022 Next meeting is June 5, 2026 at 4:00 PM.
+____
+(please review meeting minutes)`);
+
+  assert.equal(plan.title, "Life command plan");
+  assert.equal(plan.tasks.length, 1);
+  assert.equal(plan.tasks[0].title, "send the sponsor recap");
+  assert.equal(plan.tasks[0].priority, "high");
+  assert(plan.questions.some((question) => question.text.includes("room request")));
+  assert.equal(plan.nextMeeting.dateText, "June 5, 2026");
+  assert.equal(plan.nextMeeting.timeText, "4:00 PM");
 });
 
 test("api: life plan endpoint returns suggested automations", async () => {
@@ -180,6 +204,76 @@ test("api: life plan endpoint returns suggested automations", async () => {
     assert.equal(plan.automations[0].requiresApproval, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("memory: ensures local qdrant collection and payload indexes", async () => {
+  const qdrant = await startFakeQdrant();
+  try {
+    const store = createMemoryStore({ url: qdrant.url, collectionName: "test_memories", vectorSize: 32 });
+    const result = await store.ensureCollection();
+
+    assert.equal(result.ok, true);
+    assert.equal(result.created, true);
+    assert.equal(qdrant.state.collections.has("test_memories"), true);
+    assert(qdrant.state.indexes.some((index) => index.collection === "test_memories" && index.field_name === "memory_type"));
+    assert(qdrant.state.indexes.some((index) => index.collection === "test_memories" && index.field_name === "content_hash"));
+  } finally {
+    await qdrant.stop();
+  }
+});
+
+test("memory: stores payload metadata, deduplicates, and ranks query results", async () => {
+  const qdrant = await startFakeQdrant();
+  try {
+    const store = createMemoryStore({ url: qdrant.url, collectionName: "test_memories", vectorSize: 32 });
+    const saved = await store.remember({
+      memory_type: "user_preference",
+      content: "Rushil wants Nexus memory to stay local in qdrant_storage.",
+      timestamp: "2026-06-02T10:00:00.000Z",
+      source: "qa",
+      importance: 0.95,
+      project: "nexus",
+      tags: ["privacy", "qdrant"]
+    });
+    const duplicate = await store.remember({
+      memory_type: "user_preference",
+      content: "Rushil wants Nexus memory to stay local in qdrant_storage.",
+      timestamp: "2026-06-02T10:00:00.000Z",
+      source: "qa",
+      importance: 0.95,
+      project: "nexus",
+      tags: ["privacy", "qdrant"]
+    });
+    await store.remember({
+      memory_type: "workflow",
+      content: "Nexus can draft calendar followups from pasted meeting notes.",
+      timestamp: "2026-05-02T10:00:00.000Z",
+      source: "life/plan",
+      importance: 0.4,
+      project: "nexus",
+      tags: ["workflow"]
+    });
+
+    assert.equal(saved.duplicate, false);
+    assert.equal(duplicate.duplicate, true);
+    assert.equal(qdrant.state.pointsFor("test_memories").size, 2);
+    for (const field of ["memory_type", "content", "timestamp", "source", "importance", "project", "tags"]) {
+      assert(Object.hasOwn(saved.payload, field));
+    }
+
+    const result = await store.query("private local qdrant storage memory", {
+      project: "nexus",
+      limit: 2,
+      now: new Date("2026-06-02T12:00:00.000Z")
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.memories.length, 2);
+    assert.equal(result.memories[0].payload.memory_type, "user_preference");
+    assert(result.memories[0].rank >= result.memories[1].rank);
+  } finally {
+    await qdrant.stop();
   }
 });
 
@@ -234,4 +328,121 @@ function fixtureNode({ action, fields, steps, output_binding = null }) {
 
 function fixtureField(id, value, required = true) {
   return { id, type: "string", required, label: id, value };
+}
+
+async function startFakeQdrant() {
+  const collections = new Set();
+  const pointsByCollection = new Map();
+  const indexes = [];
+
+  const server = http.createServer(async (request, response) => {
+    const url = new URL(request.url, "http://127.0.0.1");
+    const pathname = url.pathname;
+    const body = await readJsonBody(request);
+    if (request.method === "GET" && pathname === "/") {
+      return sendJson(response, 200, { title: "fake qdrant" });
+    }
+
+    const collectionMatch = pathname.match(/^\/collections\/([^/]+)$/);
+    if (collectionMatch) {
+      const collection = decodeURIComponent(collectionMatch[1]);
+      if (request.method === "GET") {
+        if (!collections.has(collection)) return sendJson(response, 404, { status: { error: "not found" } });
+        return sendJson(response, 200, { result: { status: "green" } });
+      }
+      if (request.method === "PUT") {
+        collections.add(collection);
+        if (!pointsByCollection.has(collection)) pointsByCollection.set(collection, new Map());
+        return sendJson(response, 200, { result: true });
+      }
+    }
+
+    const indexMatch = pathname.match(/^\/collections\/([^/]+)\/index$/);
+    if (request.method === "PUT" && indexMatch) {
+      const collection = decodeURIComponent(indexMatch[1]);
+      indexes.push({ collection, ...body });
+      return sendJson(response, 200, { result: true });
+    }
+
+    const upsertMatch = pathname.match(/^\/collections\/([^/]+)\/points$/);
+    if (request.method === "PUT" && upsertMatch) {
+      const collection = decodeURIComponent(upsertMatch[1]);
+      const points = pointsByCollection.get(collection) ?? new Map();
+      for (const point of body.points ?? []) points.set(point.id, point);
+      pointsByCollection.set(collection, points);
+      return sendJson(response, 200, { result: { operation_id: 1, status: "completed" } });
+    }
+
+    const scrollMatch = pathname.match(/^\/collections\/([^/]+)\/points\/scroll$/);
+    if (request.method === "POST" && scrollMatch) {
+      const collection = decodeURIComponent(scrollMatch[1]);
+      const points = [...(pointsByCollection.get(collection)?.values() ?? [])]
+        .filter((point) => matchesQdrantFilter(point.payload, body.filter))
+        .slice(0, body.limit ?? 10);
+      return sendJson(response, 200, { result: { points, next_page_offset: null } });
+    }
+
+    const searchMatch = pathname.match(/^\/collections\/([^/]+)\/points\/search$/);
+    if (request.method === "POST" && searchMatch) {
+      const collection = decodeURIComponent(searchMatch[1]);
+      const points = [...(pointsByCollection.get(collection)?.values() ?? [])]
+        .filter((point) => matchesQdrantFilter(point.payload, body.filter))
+        .map((point) => ({ ...point, score: cosine(body.vector, point.vector) }))
+        .sort((left, right) => right.score - left.score)
+        .slice(0, body.limit ?? 10);
+      return sendJson(response, 200, { result: points });
+    }
+
+    return sendJson(response, 404, { status: { error: "not found" } });
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return {
+    url: `http://127.0.0.1:${port}`,
+    state: {
+      collections,
+      indexes,
+      pointsFor: (collection) => pointsByCollection.get(collection) ?? new Map()
+    },
+    stop: () => new Promise((resolve) => server.close(resolve))
+  };
+}
+
+async function readJsonBody(request) {
+  let raw = "";
+  for await (const chunk of request) raw += chunk;
+  return raw ? JSON.parse(raw) : {};
+}
+
+function sendJson(response, status, body) {
+  response.writeHead(status, { "content-type": "application/json" });
+  response.end(JSON.stringify(body));
+}
+
+function matchesQdrantFilter(payload, filter) {
+  if (!filter?.must?.length) return true;
+  return filter.must.every((condition) => {
+    const actual = payload[condition.key];
+    if (Object.hasOwn(condition.match ?? {}, "value")) {
+      return Array.isArray(actual) ? actual.includes(condition.match.value) : actual === condition.match.value;
+    }
+    if (Object.hasOwn(condition.match ?? {}, "any")) {
+      return Array.isArray(actual) ? condition.match.any.some((value) => actual.includes(value)) : condition.match.any.includes(actual);
+    }
+    return true;
+  });
+}
+
+function cosine(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length || left.length === 0) return 0;
+  let dot = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    dot += left[index] * right[index];
+    leftMagnitude += left[index] ** 2;
+    rightMagnitude += right[index] ** 2;
+  }
+  return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
 }

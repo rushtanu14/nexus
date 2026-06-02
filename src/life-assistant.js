@@ -13,9 +13,17 @@ const SECTION_LABELS = [
   "Next meeting date",
   "Follow-up meeting",
   "Follow up meeting",
+  "Meeting transcript",
+  "Transcript",
+  "Transcription",
+  "Audio transcript",
+  "Live transcript",
   "Meeting minutes",
   "Minutes",
   "Notes",
+  "Decisions",
+  "Decision log",
+  "Recap",
   "Action items",
   "Actions",
   "Tasks",
@@ -32,7 +40,7 @@ const SECTION_LABELS = [
 ];
 
 const ACTION_PATTERN =
-  /\b(i need to|i will|todo|to do|action item|follow up|complete|finish|submit|send|review|prepare|draft|schedule|email|ask|record|share|update|write|make|create|upload|approve|buy|call|text|pay|organize|clean|file|practice|study)\b/i;
+  /\b(i need to|i will|my task|todo|to do|action item|follow up|complete|finish|submit|send|review|prepare|draft|schedule|email|ask|record|share|update|write|make|create|upload|approve|approval|buy|call|text|pay|organize|clean|file|practice|study|decide|decided|assign|assigned|request(?:ed|ing)?)\b/i;
 
 export function createLifePlan(sourceText, { now = new Date(), homeDirectory = process.env.HOME ?? "~" } = {}) {
   const normalized = normalizePaste(sourceText);
@@ -77,13 +85,15 @@ function normalizePaste(text) {
     .normalize("NFKC")
     .replace(/\r\n?/g, "\n")
     .replace(/\u00a0/g, " ")
+    .replace(/[\uFF1A\uFE55]/g, ":")
     .trim();
 }
 
 function cleanLine(line) {
   return String(line ?? "")
-    .replace(/^[\s>]*(?:[-*]|\d+[.)]|[a-z][.)])\s*/i, "")
+    .replace(/^[\s>]*(?:[-*]|\d+[.)]|[a-z][.)]|[\u2022\u25CF\u25E6\u2023\u25AA\u25AB\u2013\u2014]|\u2610|\u2611|\u2705)\s*/i, "")
     .replace(/^\[[ xX]\]\s*/, "")
+    .replace(/^\d+[.)]\s*/, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -108,12 +118,47 @@ function extractSection(text, labels) {
 }
 
 function isPlaceholderLine(line) {
-  return /^(none|n\/a|na|no questions|no resources|no due dates|no action items|nothing yet)$/i.test(cleanLine(line));
+  return /^(none|n\/a|na|no questions|no resources|no due dates|no action items|nothing yet|\(?please review meeting minutes\)?)$/i.test(cleanLine(line));
+}
+
+function isMeetingMetadataLine(line) {
+  return /^(minutes?\s+recorder|recorder|scribe|notetaker|note\s+taker|prepared by|submitted by|present|absent|attendees?|members?\s+present|members?\s+absent|guests?)\s*:/i.test(cleanLine(line));
+}
+
+function isDocumentArtifactLine(line) {
+  const raw = String(line ?? "").trim();
+  const cleaned = cleanLine(line);
+  return (
+    /^[_=\-\u2013\u2014]{3,}/.test(raw) ||
+    /^[_=\-\u2013\u2014]{3,}/.test(cleaned) ||
+    /^\([^)]{1,80}\)$/.test(cleaned) ||
+    (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s*[-\u2013\u2014]\s+/.test(cleaned) && !ACTION_PATTERN.test(cleaned))
+  );
+}
+
+function isPastedDocumentNoiseLine(line) {
+  return isPlaceholderLine(line) || isMeetingMetadataLine(line) || isDocumentArtifactLine(line);
 }
 
 function isSectionLabelLine(line) {
   const label = cleanLine(line).replace(/:$/, "").trim().toLowerCase();
   return SECTION_LABELS.some((sectionLabel) => sectionLabel.toLowerCase() === label);
+}
+
+function isGenericHeading(line) {
+  return /^(agenda|notice of meeting|meeting agenda|meeting minutes|minutes)$/i.test(cleanLine(line));
+}
+
+function isAgendaNoiseLine(line) {
+  const cleaned = cleanLine(line).replace(/:$/, "").trim();
+  return (
+    !cleaned ||
+    isGenericHeading(cleaned) ||
+    isDateLikeLine(cleaned) ||
+    /^(date|time|location|locations|committee membership|agenda posted|website|to review agenda materials)\b/i.test(cleaned) ||
+    /\bcalled the meeting to order\b/i.test(cleaned) ||
+    /^(welcome and call to order|call to order|roll call|public comments?|public forum|remarks|future agenda considerations|adjourn(?:ment)?|reports?|information items?)$/i.test(cleaned)
+  );
 }
 
 function shortText(text, max = 120) {
@@ -136,6 +181,14 @@ function unique(values) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function taskKey(title, dueDateText) {
+  return `${title
+    .toLowerCase()
+    .replace(/\b(the|a|an)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()}|${dueDateText.toLowerCase().trim()}`;
+}
+
 function createId(prefix, seed, index) {
   return `${prefix}-${slugify(seed, String(index + 1))}-${index + 1}`;
 }
@@ -150,8 +203,19 @@ function titleFrom(text) {
   const lines = text
     .split(/\n+/)
     .map(cleanLine)
-    .filter((line) => line && !isSectionLabelLine(line) && !isDateLikeLine(line) && !isPlaceholderLine(line));
-  const explicit = lines.find((line) => /\b(meeting|planning|checklist|dashboard|week|day|class|project)\b/i.test(line));
+    .filter(
+      (line) =>
+        line &&
+        !isPastedDocumentNoiseLine(line) &&
+        !isSectionLabelLine(line) &&
+        !isGenericHeading(line) &&
+        !isAgendaNoiseLine(line) &&
+        !isDateLikeLine(line) &&
+        !ACTION_PATTERN.test(line) &&
+        !isQuestionCandidate(line) &&
+        !/\b(next meeting|next call|follow[- ]?up meeting|meet again|meeting again)\b/i.test(line)
+    );
+  const explicit = lines.find((line) => !isGenericHeading(line) && /\b(meeting|transcript|planning|checklist|dashboard|week|day|class|project)\b/i.test(line));
   return shortText(explicit || lines[0] || "Life command plan", 72);
 }
 
@@ -182,7 +246,10 @@ function contextFrom(text, title) {
       (candidate) =>
         candidate.length > 28 &&
         candidate.toLowerCase() !== inferredTitle &&
+        !isPastedDocumentNoiseLine(candidate) &&
         !isSectionLabelLine(candidate) &&
+        !isGenericHeading(candidate) &&
+        !isAgendaNoiseLine(candidate) &&
         !isDateLikeLine(candidate) &&
         !ACTION_PATTERN.test(candidate) &&
         !isQuestionCandidate(candidate)
@@ -238,6 +305,10 @@ function removeUrls(line) {
   return cleanLine(line).replace(/https?:\/\/[^\s)]+/gi, "").trim();
 }
 
+function hasTextOutsideUrls(line) {
+  return /[a-z0-9]/i.test(removeUrls(line));
+}
+
 function questionTextOutsideUrls(line) {
   return removeUrls(line).replace(/^(question|q)\s*[:.-]\s*/i, "").trim();
 }
@@ -251,15 +322,15 @@ function parseQuestions(text) {
   const questionSection = extractSection(text, ["Questions", "Open questions"])
     .split(/\n+/)
     .map(cleanLine)
-    .filter((line) => line && !isPlaceholderLine(line))
+    .filter((line) => line && !isPastedDocumentNoiseLine(line) && hasTextOutsideUrls(line) && /[a-z0-9]/i.test(questionTextOutsideUrls(line)))
     .map((line) => line.replace(/^(question|q)\s*[:.-]\s*/i, "").trim());
-  const source = `${extractSection(text, ["Meeting minutes", "Minutes", "Notes"])}\n${text}`;
+  const source = `${meetingBodyFrom(text)}\n${text}`;
   return unique([
     ...questionSection,
     ...source
       .split(/\n+/)
       .map(cleanLine)
-      .filter(isQuestionCandidate)
+      .filter((line) => !isPastedDocumentNoiseLine(line) && isQuestionCandidate(line))
       .map((line) => line.replace(/^(question|q)\s*[:.-]\s*/i, "").trim())
   ])
     .slice(0, 8)
@@ -281,6 +352,7 @@ function taskTitleFromLine(line) {
   return shortText(
     cleanLine(line)
       .replace(/^(todo|to do|action item|my task)\s*[:.-]\s*/i, "")
+      .replace(/^(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week)\s*[:-]\s*/i, "")
       .replace(/^i need to\s+/i, "")
       .replace(/^i will\s+/i, "")
       .replace(/\b(?:due|by|before)\s+([^.;:,\n]+)/i, "")
@@ -292,22 +364,30 @@ function taskTitleFromLine(line) {
   );
 }
 
+function meetingBodyFrom(text) {
+  return (
+    extractSection(text, ["Meeting transcript", "Transcript", "Transcription", "Audio transcript", "Live transcript"]) ||
+    extractSection(text, ["Meeting minutes", "Minutes", "Notes", "Decisions", "Decision log", "Recap"]) ||
+    text
+  );
+}
+
 function parseTasks(text) {
   const dueLines = extractSection(text, ["Due dates", "Due date"])
     .split(/\n+/)
     .map(cleanLine)
-    .filter((line) => line && !isPlaceholderLine(line));
+    .filter((line) => line && !isPastedDocumentNoiseLine(line));
   const actionLines = extractSection(text, ["Action items", "Actions", "Tasks", "Next steps", "Follow-up items", "Follow up items", "Follow-ups", "Today", "This week", "School", "Work", "Personal", "Errands"])
     .split(/\n+/)
     .map(cleanLine)
-    .filter((line) => line && !isPlaceholderLine(line));
-  const notes = extractSection(text, ["Meeting minutes", "Minutes", "Notes"]) || text;
+    .filter((line) => line && !isPastedDocumentNoiseLine(line));
+  const notes = meetingBodyFrom(text);
   const inferredLines = notes
     .split(/\n+/)
     .map(cleanLine)
     .filter((line) => ACTION_PATTERN.test(line));
   const sourceLines = unique([...actionLines, ...inferredLines, ...dueLines])
-    .filter((line) => !isSectionLabelLine(line) && !isQuestionCandidate(line) && !isCalendarOnlyLine(line))
+    .filter((line) => !isSectionLabelLine(line) && !isQuestionCandidate(line) && !isPastedDocumentNoiseLine(line) && !isAgendaNoiseLine(line) && !isCalendarOnlyLine(line))
     .slice(0, 12);
 
   const tasks = [];
@@ -316,7 +396,7 @@ function parseTasks(text) {
     const title = taskTitleFromLine(line);
     if (!title || isSectionLabelLine(title)) continue;
     const dueDateText = dueDateTextFromLine(line);
-    const key = `${title.toLowerCase()}|${dueDateText.toLowerCase()}`;
+    const key = taskKey(title, dueDateText);
     if (seen.has(key)) continue;
     seen.add(key);
     tasks.push({
@@ -364,11 +444,11 @@ function nextMeetingFrom(text, title) {
   const section = extractSection(text, ["Next meeting", "Next meeting date", "Follow-up meeting", "Follow up meeting"])
     .split(/\n+/)
     .map(cleanLine)
-    .filter((line) => line && !isPlaceholderLine(line));
+    .filter((line) => line && !isPastedDocumentNoiseLine(line));
   const mentioned = text
     .split(/\n+/)
     .map(cleanLine)
-    .filter((line) => /\b(next meeting|next call|follow[- ]?up meeting|meet again|schedule(?:d)?(?: our| the)? next)\b/i.test(line));
+    .filter((line) => !isPastedDocumentNoiseLine(line) && /\b(next meeting|next call|follow[- ]?up meeting|meet again|meeting again|schedule(?:d)?(?: our| the)? next)\b/i.test(line));
   const source = unique([...section, ...mentioned])[0];
   if (!source) return null;
   return {
@@ -393,7 +473,7 @@ function nextMeetingDateTextFromLine(line) {
 
 function nextMeetingTimeTextFromLine(line) {
   const cleaned = cleanLine(line);
-  const range = cleaned.match(/\b(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?))(?:\s*(?:-|to)\s*(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)))?\b/i);
+  const range = cleaned.match(/\b(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?))(?:\s*(?:-|to|\u2013|\u2014)\s*(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)))?\b/i);
   if (!range) return "";
   const start = normalizeTimeText(range[1]);
   const end = range[2] ? normalizeTimeText(range[2]) : "";
@@ -436,23 +516,34 @@ function suggestedAutomations({ title, brief, tasks, questions, resources, nextM
     }
   ];
 
+  if (nextMeeting) {
+    automations.push({
+      id: "automation-calendar-draft",
+      title: "Draft calendar handoff",
+      intent: `open ${calendarDraftUrl({ title, brief, tasks, questions, nextMeeting })}`,
+      impact: "Opens a Google Calendar draft with the next meeting context ready for manual review.",
+      riskLevel: "medium",
+      requiresApproval: true
+    });
+  }
+
+  if (tasks.length || questions.length) {
+    automations.push({
+      id: "automation-gmail-draft",
+      title: "Draft recap email",
+      intent: `open ${gmailDraftUrl({ title, brief, tasks, questions, resources })}`,
+      impact: "Opens a Gmail compose draft with the recap, tasks, questions, and resource links.",
+      riskLevel: "medium",
+      requiresApproval: true
+    });
+  }
+
   if (resources[0]) {
     automations.push({
       id: "automation-open-resource",
       title: "Open first resource",
       intent: `open ${resources[0].url} and extract the page title`,
       impact: `Opens ${resources[0].url} so Nexus can verify the reference before follow-up.`,
-      riskLevel: "medium",
-      requiresApproval: true
-    });
-  }
-
-  if (nextMeeting) {
-    automations.push({
-      id: "automation-calendar-draft",
-      title: "Draft calendar handoff",
-      intent: `open https://calendar.google.com/calendar/render?action=TEMPLATE and prepare a calendar draft for ${nextMeeting.title}`,
-      impact: "Opens Google Calendar with the meeting context ready for manual review.",
       riskLevel: "medium",
       requiresApproval: true
     });
@@ -486,8 +577,55 @@ function warningsFor({ tasks, resources, automations, nextMeeting }) {
   if (tasks.some((task) => task.priority === "high")) warnings.push("High-priority tasks were detected; review due dates before trusting an automation.");
   if (resources.length) warnings.push("Resource automations can open browser pages and should be reviewed before running.");
   if (nextMeeting) warnings.push("Calendar handoff is a draft only; review it before creating an event.");
+  if (automations.some((automation) => automation.id === "automation-gmail-draft")) warnings.push("Email drafts must be reviewed before sending; Nexus only opens the draft handoff.");
   if (automations.some((automation) => automation.intent.includes("/Documents/Nexus/"))) warnings.push("The command brief automation writes a local file under Documents/Nexus.");
   return warnings;
+}
+
+function handoffDetails({ title, brief, tasks, questions, resources }) {
+  return [
+    `Nexus follow-up for ${title}.`,
+    "",
+    brief,
+    "",
+    "Tasks:",
+    ...tasks.map((task) => `- ${task.title}${task.dueDateText ? ` (due ${task.dueDateText})` : ""}`),
+    "",
+    "Open questions:",
+    ...(questions.length ? questions.map((question) => `- ${question.text}`) : ["- No open questions detected."]),
+    "",
+    "Resources:",
+    ...(resources.length ? resources.map((resource) => `- ${resource.title}: ${resource.url}`) : ["- No resource links detected."])
+  ].join("\n");
+}
+
+function calendarDraftUrl({ title, brief, tasks, questions, nextMeeting }) {
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: nextMeeting.title,
+    details: [
+      `Nexus follow-up for ${title}.`,
+      "",
+      brief,
+      "",
+      "Tasks:",
+      ...tasks.map((task) => `- ${task.title}${task.dueDateText ? ` (due ${task.dueDateText})` : ""}`),
+      "",
+      "Open questions:",
+      ...(questions.length ? questions.map((question) => `- ${question.text}`) : ["- No open questions detected."])
+    ].join("\n")
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function gmailDraftUrl({ title, brief, tasks, questions, resources }) {
+  const params = new URLSearchParams({
+    view: "cm",
+    fs: "1",
+    su: `${title} recap`,
+    body: handoffDetails({ title, brief, tasks, questions, resources })
+  });
+  return `https://mail.google.com/mail/?${params.toString()}`;
 }
 
 function rawSummary({ title, date, brief, tasks, questions, resources, nextMeeting }) {

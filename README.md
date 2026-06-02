@@ -9,14 +9,14 @@
 
 # dev notes
 
-## branch concept
+## meeting assistant concept
 
-`codex/relay-nexus-life-assistant` turns Nexus into a personal command center:
-paste one block of meeting notes, school tasks, errands, links, or messy plans,
-then Nexus produces a Relay-style command brief with tasks, questions, resources,
-next-meeting context, and suggested local automations. Those suggestions still
-flow through the Nexus canvas, dry run, raw-script review, and trust gates before
-anything runs on the Mac.
+Nexus now includes the meeting-follow-up surface: paste one block of transcript
+text, meeting notes, school tasks, errands, links, or messy plans, then Nexus
+produces a command brief with tasks, questions, resources, next-meeting context,
+and suggested local workflows. Those suggestions still flow through the Nexus
+canvas, dry run, raw-script review, and trust gates before anything runs on the
+Mac.
 
 ## repo
 
@@ -80,6 +80,17 @@ npm start
 ```
 
 The local API listens on `http://127.0.0.1:3131`. Browser click/fill, MCP calls, and AI inference use injectable adapters; filesystem, shell, HTTP, and basic browser navigation/extraction have local implementations.
+
+## local memory
+
+Nexus can run local semantic memory through Qdrant. Start it with:
+
+```bash
+npm run memory:pull
+npm run memory:start
+```
+
+Qdrant listens on `http://127.0.0.1:6333`, the dashboard is at `http://127.0.0.1:6333/dashboard`, and memory persists in `./qdrant_storage`. Nexus creates the `nexus_memories_v1` collection on first memory use, stores embedded vectors with payload metadata, deduplicates before writes, and ranks retrieved memories by semantic similarity, importance, and recency. See `docs/memory/qdrant-local-memory.md` for endpoints and configuration.
 
 Node generation uses the local Ollama model `qwen2.5-coder:7b`. Install and start it with:
 
