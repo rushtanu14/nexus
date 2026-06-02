@@ -328,11 +328,47 @@ public struct LifePlan: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+public struct BrainConfig: Codable, Equatable, Sendable {
+    public var provider: String
+    public var model: String
+    public var apiKey: String
+    public var baseUrl: String
+
+    public init(provider: String = "ollama", model: String = "qwen2.5-coder:7b", apiKey: String = "", baseUrl: String = "") {
+        self.provider = provider
+        self.model = model
+        self.apiKey = apiKey
+        self.baseUrl = baseUrl
+    }
+}
+
+public struct BrainCatalog: Equatable, Sendable {
+    public var ollama = ["qwen2.5-coder:7b", "llama3.2:3b", "gemma3:4b"]
+    public var lmstudio = ["qwen2.5-coder-7b-instruct", "llama-3.2-3b-instruct", "gemma-3-4b-it"]
+
+    public init() {}
+}
+
 public protocol WorkflowEngineClientProtocol: Sendable {
     func generateNode(intent: String, context: [String: JSONValue]) async throws -> ExecutableNode
     func runNode(_ node: ExecutableNode, context: [String: JSONValue]) async throws -> EngineRunResult
     func listNodes() async throws -> [ExecutableNode]
     func createLifePlan(text: String) async throws -> LifePlan
+    func deleteNode(id: String) async throws
+    func clearNodes() async throws
+    func completeWithNex(prompt: String, brain: BrainConfig) async throws -> String
+    func prepareBrain(_ brain: BrainConfig) async throws -> String
+}
+
+public extension WorkflowEngineClientProtocol {
+    func deleteNode(id: String) async throws {}
+    func clearNodes() async throws {}
+    func completeWithNex(prompt: String, brain: BrainConfig) async throws -> String {
+        throw EngineClientError.requestFailed("Nex completion is unavailable for this engine client")
+    }
+    func prepareBrain(_ brain: BrainConfig) async throws -> String {
+        throw EngineClientError.requestFailed("Brain preparation is unavailable for this engine client")
+    }
 }
 
 public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
@@ -360,6 +396,22 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
 
     public func createLifePlan(text: String) async throws -> LifePlan {
         try await request(path: "/life/plan", body: LifePlanRequest(text: text), response: LifePlan.self)
+    }
+
+    public func deleteNode(id: String) async throws {
+        _ = try await request(path: "/node/delete", body: NodeIDRequest(id: id), response: OKResponse.self)
+    }
+
+    public func clearNodes() async throws {
+        _ = try await request(path: "/node/clear", body: EmptyRequest(), response: OKResponse.self)
+    }
+
+    public func completeWithNex(prompt: String, brain: BrainConfig) async throws -> String {
+        try await request(path: "/nex/complete", body: NexCompleteRequest(prompt: prompt, brain: brain), response: NexCompleteResponse.self).completion
+    }
+
+    public func prepareBrain(_ brain: BrainConfig) async throws -> String {
+        try await request(path: "/brain/prepare", body: BrainRequest(brain: brain), response: BrainPrepareResponse.self).status
     }
 
     private func request<Request: Encodable, Response: Decodable>(path: String, body: Request, response: Response.Type) async throws -> Response {
@@ -396,6 +448,33 @@ private struct LifePlanRequest: Encodable {
     var text: String
 }
 
+private struct NodeIDRequest: Encodable {
+    var id: String
+}
+
+private struct EmptyRequest: Encodable {}
+
+private struct OKResponse: Decodable {
+    var ok: Bool
+}
+
+private struct NexCompleteRequest: Encodable {
+    var prompt: String
+    var brain: BrainConfig
+}
+
+private struct NexCompleteResponse: Decodable {
+    var completion: String
+}
+
+private struct BrainRequest: Encodable {
+    var brain: BrainConfig
+}
+
+private struct BrainPrepareResponse: Decodable {
+    var status: String
+}
+
 private struct ErrorResponse: Decodable {
     var error: String
 }
@@ -420,6 +499,8 @@ public struct WorkflowNode: Identifiable, Codable, Equatable {
     public var status: NodeStatus
     public var parameters: [String: String]
     public var executableNode: ExecutableNode?
+    public var deliverable: String = "Complete the configured automation"
+    public var schedule: String = "Manual"
 }
 
 public struct WorkflowEdge: Identifiable, Codable, Equatable {
@@ -457,6 +538,19 @@ public struct GeneratedWorkflow: Codable, Equatable {
     public var lastMovedFiles: [ImpactItem]
     public var executableNode: ExecutableNode?
     public var executionOutput: String?
+    public var groupedSchedule: String = ""
+}
+
+public struct SavedWorkflow: Identifiable, Codable, Equatable {
+    public var id: UUID
+    public var workflow: GeneratedWorkflow
+    public var savedAt: Date
+
+    public init(id: UUID = UUID(), workflow: GeneratedWorkflow, savedAt: Date = Date()) {
+        self.id = id
+        self.workflow = workflow
+        self.savedAt = savedAt
+    }
 }
 
 @Observable
@@ -472,7 +566,15 @@ public final class StudioModel {
     public var isPlanning = false
     public var lifePlan: LifePlan?
     public var savedNodes: [ExecutableNode] = []
+    public var savedWorkflows: [SavedWorkflow] = []
+    public var brainConfig = BrainConfig()
+    public let brainCatalog = BrainCatalog()
+    public var brainStatus = "Ready"
     private let engineClient: any WorkflowEngineClientProtocol
+    private var scheduleTimer: Timer?
+    private var lastScheduleRuns: [String: Date] = [:]
+    private let savedWorkflowsKey = "NexusSavedWorkflows"
+    private let brainConfigKey = "NexusBrainConfig"
 
     public init(seed: Bool = false, engineClient: any WorkflowEngineClientProtocol = WorkflowEngineClient()) {
         self.engineClient = engineClient
@@ -613,6 +715,32 @@ public final class StudioModel {
         refreshExecutableSummary()
     }
 
+    public func updateSelectedNode(title: String) {
+        guard let index = selectedNodeIndex else { return }
+        workflow.nodes[index].title = title
+    }
+
+    public func updateSelectedNode(deliverable: String) {
+        guard let index = selectedNodeIndex else { return }
+        workflow.nodes[index].deliverable = deliverable
+    }
+
+    public func deleteSelectedCanvasNode() {
+        guard let selectedNodeID else { return }
+        workflow.nodes.removeAll(where: { $0.id == selectedNodeID })
+        workflow.edges.removeAll(where: { $0.from == selectedNodeID || $0.to == selectedNodeID })
+        self.selectedNodeID = workflow.nodes.first?.id
+        pendingConnectionSourceID = nil
+        refreshExecutableSummary()
+    }
+
+    public func clearCanvas() {
+        workflow = StudioModel.emptyWorkflow()
+        selectedNodeID = nil
+        pendingConnectionSourceID = nil
+        runnerStatus = "Idle"
+    }
+
     public func addGeneratedNode(kind: NodeKind) {
         log(node: "Canvas", message: "Canvas-only nodes are disabled for executable workflows", status: .blocked)
     }
@@ -639,6 +767,22 @@ public final class StudioModel {
         }
         if let lastError {
             log(node: "Your Nodes", message: lastError.localizedDescription, status: .blocked)
+        }
+    }
+
+    public func unsaveNode(_ node: ExecutableNode) {
+        savedNodes.removeAll(where: { $0.id == node.id })
+        Task {
+            try? await engineClient.deleteNode(id: node.id)
+            await refreshSavedNodes()
+        }
+    }
+
+    public func unsaveAllNodes() {
+        savedNodes = []
+        Task {
+            try? await engineClient.clearNodes()
+            await refreshSavedNodes()
         }
     }
 
@@ -717,6 +861,111 @@ public final class StudioModel {
         log(node: "Permissions", message: "macOS Accessibility prompt opened for app control", status: .warning)
     }
 
+    public func refreshSavedWorkflows() async {
+        guard let data = UserDefaults.standard.data(forKey: savedWorkflowsKey),
+              let decoded = try? JSONDecoder().decode([SavedWorkflow].self, from: data) else {
+            savedWorkflows = []
+            return
+        }
+        savedWorkflows = decoded
+    }
+
+    public func saveCurrentWorkflow() {
+        guard hasWorkflow else { return }
+        savedWorkflows.removeAll(where: { $0.workflow.name == workflow.name })
+        savedWorkflows.insert(SavedWorkflow(workflow: workflow), at: 0)
+        persistSavedWorkflows()
+    }
+
+    public func loadWorkflow(_ saved: SavedWorkflow) {
+        workflow = saved.workflow
+        selectedNodeID = workflow.nodes.first?.id
+        pendingConnectionSourceID = nil
+        runnerStatus = "Loaded"
+    }
+
+    public func deleteWorkflow(_ saved: SavedWorkflow) {
+        savedWorkflows.removeAll(where: { $0.id == saved.id })
+        persistSavedWorkflows()
+    }
+
+    public func setSelectedNodeDaily(_ date: Date) {
+        setSelectedNodeSchedule("Every day at \(Self.scheduleTimeFormatter.string(from: date))")
+    }
+
+    public func setSelectedNodeRunOnce(_ date: Date) {
+        setSelectedNodeSchedule("Once: \(Self.scheduleDateFormatter.string(from: date))")
+    }
+
+    public func clearSelectedNodeSchedule() {
+        setSelectedNodeSchedule("Manual")
+    }
+
+    public func setWorkflowDaily(_ date: Date) {
+        workflow.groupedSchedule = "Every day at \(Self.scheduleTimeFormatter.string(from: date))"
+    }
+
+    public func setWorkflowRunOnce(_ date: Date) {
+        workflow.groupedSchedule = "Once: \(Self.scheduleDateFormatter.string(from: date))"
+    }
+
+    public func clearWorkflowSchedule() {
+        workflow.groupedSchedule = ""
+    }
+
+    public func startScheduleMonitor() {
+        guard scheduleTimer == nil else { return }
+        scheduleTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.runDueWorkflowIfNeeded()
+        }
+    }
+
+    public func refreshBrain() async {
+        guard let data = UserDefaults.standard.data(forKey: brainConfigKey),
+              let decoded = try? JSONDecoder().decode(BrainConfig.self, from: data) else {
+            brainStatus = "Ready"
+            return
+        }
+        brainConfig = decoded
+        brainStatus = "Loaded"
+    }
+
+    public func selectBrainProvider(_ provider: String) {
+        brainConfig.provider = provider
+        if provider == "ollama", !brainCatalog.ollama.contains(brainConfig.model) {
+            brainConfig.model = brainCatalog.ollama[0]
+        } else if provider == "lmstudio", !brainCatalog.lmstudio.contains(brainConfig.model) {
+            brainConfig.model = brainCatalog.lmstudio[0]
+        }
+    }
+
+    public func selectBrainModel(_ model: String) {
+        brainConfig.model = model
+    }
+
+    public func saveBrain() {
+        if let data = try? JSONEncoder().encode(brainConfig) {
+            UserDefaults.standard.set(data, forKey: brainConfigKey)
+            brainStatus = "Saved"
+        }
+    }
+
+    public func prepareSelectedBrain() {
+        saveBrain()
+        brainStatus = "Preparing..."
+        Task {
+            do {
+                brainStatus = try await engineClient.prepareBrain(brainConfig)
+            } catch {
+                brainStatus = error.localizedDescription
+            }
+        }
+    }
+
+    public func completeWithNex(_ prompt: String) async throws -> String {
+        try await engineClient.completeWithNex(prompt: prompt, brain: brainConfig)
+    }
+
     private func log(node: String, message: String, status: NodeStatus) {
         logs.insert(RunLog(id: UUID(), time: Date(), node: node, message: message, status: status), at: 0)
     }
@@ -762,6 +1011,67 @@ public final class StudioModel {
         workflow.rawScript = StudioModel.prettyJSON(executableNodes)
         workflow.executableNode = executableNodes.count == 1 ? executableNodes[0] : nil
     }
+
+    private var selectedNodeIndex: Int? {
+        guard let selectedNodeID else { return nil }
+        return workflow.nodes.firstIndex(where: { $0.id == selectedNodeID })
+    }
+
+    private func setSelectedNodeSchedule(_ schedule: String) {
+        guard let index = selectedNodeIndex else { return }
+        workflow.nodes[index].schedule = schedule
+    }
+
+    private func persistSavedWorkflows() {
+        if let data = try? JSONEncoder().encode(savedWorkflows) {
+            UserDefaults.standard.set(data, forKey: savedWorkflowsKey)
+        }
+    }
+
+    private func runDueWorkflowIfNeeded() {
+        guard hasWorkflow, !approvalRequired, !isRunning else { return }
+        let now = Date()
+        let groupedDue = isScheduleDue(workflow.groupedSchedule, key: "workflow", now: now)
+        let dueNodeIDs = workflow.nodes.filter { isScheduleDue($0.schedule, key: $0.id.uuidString, now: now) }.map(\.id)
+        guard groupedDue || !dueNodeIDs.isEmpty else { return }
+        if workflow.groupedSchedule.hasPrefix("Once: ") { workflow.groupedSchedule = "" }
+        for id in dueNodeIDs where workflow.nodes.first(where: { $0.id == id })?.schedule.hasPrefix("Once: ") == true {
+            workflow.nodes[workflow.nodes.firstIndex(where: { $0.id == id })!].schedule = "Manual"
+        }
+        runLocally()
+    }
+
+    private func isScheduleDue(_ schedule: String, key: String, now: Date) -> Bool {
+        if schedule.hasPrefix("Once: "),
+           let due = Self.scheduleDateFormatter.date(from: String(schedule.dropFirst("Once: ".count))),
+           due <= now {
+            return true
+        }
+        guard schedule.hasPrefix("Every day at "),
+              let target = Self.scheduleTimeFormatter.date(from: String(schedule.dropFirst("Every day at ".count))) else {
+            return false
+        }
+        let calendar = Calendar.current
+        let targetParts = calendar.dateComponents([.hour, .minute], from: target)
+        let nowParts = calendar.dateComponents([.hour, .minute], from: now)
+        guard targetParts.hour == nowParts.hour, targetParts.minute == nowParts.minute else { return false }
+        if let last = lastScheduleRuns[key], calendar.isDate(last, inSameDayAs: now) { return false }
+        lastScheduleRuns[key] = now
+        return true
+    }
+
+    private static let scheduleTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let scheduleDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     public static func emptyWorkflow() -> GeneratedWorkflow {
         GeneratedWorkflow(name: "", prompt: "", nodes: [], edges: [], warnings: [], impacts: [], rawScript: "", approvedSignature: nil, accessibilityRequested: false, lastMovedFiles: [], executableNode: nil, executionOutput: nil)

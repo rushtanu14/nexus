@@ -1,11 +1,15 @@
 import http from "node:http";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import express from "express";
 import { executeNode } from "./executor.js";
 import { generateNode, OLLAMA_BASE_URL, OLLAMA_MODEL } from "./generator.js";
 import { createLifePlan } from "./life-assistant.js";
 import { createMemoryStore } from "./memory-store.js";
 import { listServers, registerServer, scrapeServer } from "./mcp-registry.js";
-import { listNodes, saveNode } from "./node-store.js";
+import { clearNodes, deleteNode, listNodes, saveNode } from "./node-store.js";
+
+const execFileAsync = promisify(execFile);
 
 export function createApp() {
   const app = express();
@@ -35,6 +39,14 @@ export function createApp() {
   }));
   app.get("/node/list", asyncRoute(async (_request, response) => {
     response.json(await listNodes());
+  }));
+  app.post("/node/delete", asyncRoute(async (request, response) => {
+    await deleteNode(request.body.id);
+    response.json({ ok: true });
+  }));
+  app.post("/node/clear", asyncRoute(async (_request, response) => {
+    await clearNodes();
+    response.json({ ok: true });
   }));
   app.post("/node/run", asyncRoute(async (request, response) => {
     const result = await executeNode(request.body.node, request.body.context ?? {});
@@ -74,6 +86,33 @@ export function createApp() {
   }));
   app.post("/memory/remember", asyncRoute(async (request, response) => {
     response.json(await createMemoryStore().remember(request.body.memory ?? request.body));
+  }));
+  app.post("/nex/complete", asyncRoute(async (request, response) => {
+    const prompt = String(request.body.prompt ?? "").trim();
+    if (!prompt) throw new Error("prompt is required");
+    const project = request.body.project ?? "nexus";
+    const memory = await optionalMemoryContext(prompt, { project, source: "nex/complete" });
+    const completion = await completeWithNex(prompt, request.body.brain ?? {}, memory.context);
+    await optionalRemember({
+      memory_type: "prior_conversation",
+      content: `User asked Nex: ${prompt}`,
+      source: "nex/complete",
+      importance: 0.5,
+      project,
+      tags: ["assistant", "user-request"]
+    });
+    await optionalRemember({
+      memory_type: "prior_conversation",
+      content: `Nex answered: ${completion}`,
+      source: "nex/complete",
+      importance: 0.4,
+      project,
+      tags: ["assistant", "response"]
+    });
+    response.json({ completion, memory_status: memory.status });
+  }));
+  app.post("/brain/prepare", asyncRoute(async (request, response) => {
+    response.json({ status: await prepareBrain(request.body.brain ?? {}) });
   }));
   app.post("/mcp/register", asyncRoute(async (request, response) => {
     await registerServer(request.body.app, request.body.url);
@@ -142,6 +181,68 @@ function nodeRunMemory(node, result) {
 
 function lifePlanMemory(plan) {
   return `Created life plan "${plan.title}" with ${plan.stats.tasks} tasks, ${plan.stats.questions} questions, and ${plan.stats.automations} suggested automations. Brief: ${plan.brief}`;
+}
+
+async function completeWithNex(prompt, brain, memoryContext) {
+  const provider = brain.provider ?? "ollama";
+  const model = brain.model || OLLAMA_MODEL;
+  const system = [
+    "You are Nex, the local Nexus personal assistant.",
+    "Answer concisely and use remembered context only when it is relevant.",
+    memoryContext ? `Relevant local memory:\n${memoryContext}` : "No relevant local memory was available."
+  ].join("\n\n");
+
+  if (provider === "ollama") {
+    const baseUrl = String(brain.baseUrl || OLLAMA_BASE_URL).replace(/\/$/, "");
+    const response = await fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+      signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000))
+    });
+    if (!response.ok) throw new Error(`Nex model request failed with HTTP ${response.status}: ${await response.text()}`);
+    const payload = await response.json();
+    if (!payload.message?.content) throw new Error("Nex model returned no content");
+    return payload.message.content;
+  }
+
+  const baseUrl = String(brain.baseUrl || (provider === "lmstudio" ? "http://127.0.0.1:1234/v1" : "https://api.openai.com/v1")).replace(/\/$/, "");
+  const headers = { "content-type": "application/json" };
+  if (brain.apiKey) headers.authorization = `Bearer ${brain.apiKey}`;
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+    signal: AbortSignal.timeout(Number(process.env.NEXUS_CHAT_TIMEOUT_MS ?? 120000))
+  });
+  if (!response.ok) throw new Error(`Nex model request failed with HTTP ${response.status}: ${await response.text()}`);
+  const payload = await response.json();
+  if (!payload.choices?.[0]?.message?.content) throw new Error("Nex model returned no content");
+  return payload.choices[0].message.content;
+}
+
+async function prepareBrain(brain) {
+  const provider = brain.provider ?? "ollama";
+  const model = brain.model || OLLAMA_MODEL;
+  if (provider === "ollama") {
+    const baseUrl = String(brain.baseUrl || OLLAMA_BASE_URL).replace(/\/$/, "");
+    const response = await fetch(`${baseUrl}/api/pull`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model, stream: false }),
+      signal: AbortSignal.timeout(Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000))
+    });
+    if (!response.ok) throw new Error(`Ollama could not prepare ${model}: ${await response.text()}`);
+    return `Prepared ${model} with Ollama`;
+  }
+  if (provider === "lmstudio") {
+    const executable = process.env.NEXUS_LMS_PATH || `${process.env.HOME}/.lmstudio/bin/lms`;
+    await execFileAsync(executable, ["server", "start"]);
+    await execFileAsync(executable, ["get", model, "--yes"], { timeout: Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000) });
+    await execFileAsync(executable, ["load", model, "--yes"], { timeout: Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000) });
+    return `Prepared ${model} with LM Studio`;
+  }
+  return "OpenAI-compatible providers do not require local preparation";
 }
 
 async function ensureMemoryOnLaunch() {

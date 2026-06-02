@@ -1,0 +1,330 @@
+import AVFoundation
+import AppKit
+import Foundation
+import Observation
+import Speech
+import LocalWorkflowStudioCore
+
+struct EchoSession: Identifiable, Codable, Equatable {
+    var id: UUID
+    var name: String
+    var createdAt: Date
+    var duration: TimeInterval
+    var transcript: String
+    var notes: String
+}
+
+@MainActor
+@Observable
+final class SpeechTranscriber {
+    var transcript = ""
+    var status = "Ready"
+    var isRecording = false
+
+    private let audioEngine = AVAudioEngine()
+    private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var task: SFSpeechRecognitionTask?
+    private var finalHandler: ((String) -> Void)?
+    private var silenceTimer: Timer?
+
+    func start(onFinal: ((String) -> Void)? = nil) {
+        guard !isRecording else { return }
+        finalHandler = onFinal
+        Task {
+            guard await requestPermissions() else {
+                status = "Microphone and speech permissions are required"
+                return
+            }
+            startAudio()
+        }
+    }
+
+    func stop() {
+        guard isRecording else { return }
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        request?.endAudio()
+        isRecording = false
+        status = "Ready"
+        finalHandler?(transcript)
+        finalHandler = nil
+        silenceTimer?.invalidate()
+    }
+
+    private func requestPermissions() async -> Bool {
+        let microphone = await AVCaptureDevice.requestAccess(for: .audio)
+        let speech = await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { authorization in
+                continuation.resume(returning: authorization == .authorized)
+            }
+        }
+        return microphone && speech
+    }
+
+    private func startAudio() {
+        guard let recognizer, recognizer.isAvailable else {
+            status = "Speech recognition is unavailable"
+            return
+        }
+        transcript = ""
+        task?.cancel()
+        task = nil
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        self.request = request
+
+        let input = audioEngine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+        audioEngine.prepare()
+        do {
+            try audioEngine.start()
+            isRecording = true
+            status = "Listening"
+        } catch {
+            status = error.localizedDescription
+            return
+        }
+
+        task = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            Task { @MainActor in
+                if let result {
+                    self?.transcript = result.bestTranscription.formattedString
+                    if result.isFinal { self?.stop() }
+                } else if let error {
+                    self?.status = error.localizedDescription
+                    self?.stop()
+                }
+            }
+        }
+    }
+}
+
+@MainActor
+final class NexSpeechOutput {
+    static let shared = NexSpeechOutput()
+    private let synthesizer = AVSpeechSynthesizer()
+
+    func speak(_ text: String) {
+        synthesizer.stopSpeaking(at: .immediate)
+        if speakWithPiper(text) { return }
+        synthesizer.speak(AVSpeechUtterance(string: text))
+    }
+
+    private func speakWithPiper(_ text: String) -> Bool {
+        let environment = ProcessInfo.processInfo.environment
+        guard let model = environment["NEXUS_PIPER_MODEL"],
+              FileManager.default.fileExists(atPath: model),
+              let executable = piperExecutables().first(where: FileManager.default.isExecutableFile(atPath:)) else {
+            return false
+        }
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("nexus-piper-\(UUID().uuidString).wav")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["--model", model, "--output-file", output.path]
+        let pipe = Pipe()
+        process.standardInput = pipe
+        do {
+            try process.run()
+            pipe.fileHandleForWriting.write(Data(text.utf8))
+            pipe.fileHandleForWriting.closeFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return false }
+            NSSound(contentsOf: output, byReference: false)?.play()
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func piperExecutables() -> [String] {
+        var candidates = ["/opt/homebrew/bin/piper", "/usr/local/bin/piper"]
+        if let engineRoot = ProcessInfo.processInfo.environment["NEXUS_ENGINE_ROOT"] {
+            candidates.append(URL(fileURLWithPath: engineRoot).appendingPathComponent(".venv-piper/bin/piper").path)
+        }
+        candidates.append(URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("../.venv-piper/bin/piper").standardized.path)
+        return candidates
+    }
+}
+
+@MainActor
+@Observable
+final class EchoStore {
+    var sessions: [EchoSession]
+    var selectedID: UUID?
+    var sessionName = ""
+    var status = "Ready"
+    let transcriber = SpeechTranscriber()
+    private var recordingStartedAt: Date?
+    private let defaultsKey = "NexusEchoSessions"
+
+    init() {
+        sessions = []
+        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+           let decoded = try? JSONDecoder().decode([EchoSession].self, from: data) {
+            sessions = decoded
+            if let first = decoded.first {
+                selectedID = first.id
+                sessionName = first.name
+            }
+        }
+    }
+
+    var selectedSession: EchoSession? {
+        sessions.first(where: { $0.id == selectedID })
+    }
+
+    var elapsed: TimeInterval {
+        guard let recordingStartedAt else { return selectedSession?.duration ?? 0 }
+        return (selectedSession?.duration ?? 0) + Date().timeIntervalSince(recordingStartedAt)
+    }
+
+    func createEcho() {
+        let session = EchoSession(id: UUID(), name: "Untitled Echo", createdAt: Date(), duration: 0, transcript: "", notes: "")
+        sessions.insert(session, at: 0)
+        selectedID = session.id
+        sessionName = session.name
+        persist()
+    }
+
+    func select(_ session: EchoSession) {
+        selectedID = session.id
+        sessionName = session.name
+    }
+
+    func renameSelected(_ name: String) {
+        guard let index = selectedIndex else { return }
+        let newName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        sessions[index].name = newName.isEmpty ? "Untitled Echo" : newName
+        sessionName = sessions[index].name
+        persist()
+
+        // Force a refresh of the selectedID to ensure UI updates if needed,
+        // though sessions mutation should be enough.
+        let currentID = selectedID
+        selectedID = nil
+        selectedID = currentID
+    }
+
+    func toggleRecording() {
+        if transcriber.isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    func startRecording() {
+        if selectedSession == nil { createEcho() }
+        recordingStartedAt = Date()
+        transcriber.start { [weak self] transcript in
+            self?.saveTranscript(transcript)
+        }
+        status = "Recording"
+    }
+
+    func stopRecording() {
+        transcriber.stop()
+        saveTranscript(transcriber.transcript)
+        status = "Ready"
+    }
+
+    func updateNotes(_ notes: String) {
+        guard let index = selectedIndex else { return }
+        sessions[index].notes = notes
+        persist()
+    }
+
+    func polishNotes(using model: StudioModel) {
+        guard let index = selectedIndex else { return }
+        let source = sessions[index].notes.isEmpty ? sessions[index].transcript : sessions[index].notes
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        status = "Nex is polishing notes"
+        Task {
+            do {
+                let polished = try await model.completeWithNex("Polish these meeting notes. Preserve factual content, use clear headings and concise bullets:\n\n\(source)")
+                sessions[index].notes = polished
+                status = "Notes polished"
+                persist()
+            } catch {
+                status = error.localizedDescription
+            }
+        }
+    }
+
+    private var selectedIndex: Int? {
+        guard let selectedID else { return nil }
+        return sessions.firstIndex(where: { $0.id == selectedID })
+    }
+
+    private func saveTranscript(_ transcript: String) {
+        guard let index = selectedIndex else { return }
+        sessions[index].transcript = transcript
+        if sessions[index].notes.isEmpty { sessions[index].notes = transcript }
+        if let recordingStartedAt {
+            sessions[index].duration += Date().timeIntervalSince(recordingStartedAt)
+            self.recordingStartedAt = nil
+        }
+        persist()
+    }
+
+    private func persist() {
+        if let data = try? JSONEncoder().encode(sessions) {
+            UserDefaults.standard.set(data, forKey: defaultsKey)
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class NexVoiceStore {
+    var isVisible = true
+    var response = "Ask Nex with your voice."
+    var requestedSection: String?
+    var requestedAutomation: String?
+    let transcriber = SpeechTranscriber()
+
+    func toggle(using model: StudioModel) {
+        if transcriber.isRecording {
+            transcriber.stop()
+        } else {
+            transcriber.start { [weak self] transcript in
+                guard !transcript.isEmpty else { return }
+                self?.response = "Thinking..."
+                Task {
+                    do {
+                        self?.route(transcript, using: model)
+                        let reply = try await model.completeWithNex(transcript)
+                        self?.response = reply
+                        NexSpeechOutput.shared.speak(reply)
+                    } catch {
+                        self?.response = error.localizedDescription
+                    }
+                }
+            }
+        }
+    }
+
+    func startListening(using model: StudioModel) {
+        isVisible = true
+        if !transcriber.isRecording { toggle(using: model) }
+    }
+
+    private func route(_ prompt: String, using model: StudioModel) {
+        let lower = prompt.lowercased()
+        if lower.contains("echo") || lower.contains("meeting") || lower.contains("notes") { requestedSection = "echo" }
+        else if lower.contains("brain") || lower.contains("model") { requestedSection = "brain" }
+        else if lower.contains("hub") || lower.contains("workflow list") { requestedSection = "hub" }
+        else if lower.contains("clear canvas") { model.clearCanvas(); requestedSection = "workflows" }
+        else if lower.contains("delete selected node") || lower.contains("remove selected node") { model.deleteSelectedCanvasNode(); requestedSection = "workflows" }
+        else if lower.contains("automation") || lower.contains("node") || lower.contains("nexspace") {
+            requestedSection = "workflows"
+            requestedAutomation = prompt
+            model.prompt = prompt
+            model.generateWorkflow()
+        }
+    }
+}

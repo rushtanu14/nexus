@@ -26,6 +26,7 @@ const upsertNode = database.prepare(`
 `);
 const selectNodes = database.prepare("SELECT intent, node_json, embedding_json FROM nodes");
 const deleteNodes = database.prepare("DELETE FROM nodes");
+const deleteNodeByID = database.prepare("DELETE FROM nodes WHERE id = ?");
 
 export async function saveNode(node, intent = node.meta.label) {
   const embedding = await embedIntent(intent);
@@ -52,6 +53,10 @@ export async function listNodes() {
 
 export async function clearNodes() {
   deleteNodes.run();
+}
+
+export async function deleteNode(id) {
+  deleteNodeByID.run(id);
 }
 
 function semanticSimilarity(left, right) {

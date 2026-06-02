@@ -30,6 +30,12 @@ On memory reads or writes, Nexus creates the `nexus_memories_v1` collection if i
 does not already exist. Memories use deterministic local embeddings by default,
 so the memory layer stays local and does not require a cloud embedding service.
 
+The Nex personal assistant uses this memory layer through `/nex/complete`.
+Before each assistant completion, Nexus retrieves relevant local memories and
+adds them to the model context. After the completion, it stores the user request
+and Nex response as `prior_conversation` memories. If Qdrant is offline, Nex
+continues without remembered context and reports `memory_status: "offline"`.
+
 Required payload fields:
 
 - `memory_type`
@@ -59,6 +65,9 @@ curl -X POST http://127.0.0.1:3131/memory/remember \
 curl -X POST http://127.0.0.1:3131/memory/query \
   -H "content-type: application/json" \
   -d '{"text":"local private memory","project":"nexus","limit":5}'
+curl -X POST http://127.0.0.1:3131/nex/complete \
+  -H "content-type: application/json" \
+  -d '{"prompt":"What do you remember about my preferences?","brain":{"provider":"ollama","model":"qwen2.5-coder:7b"}}'
 ```
 
 Configuration:
