@@ -1,10 +1,25 @@
 <div align="center">
 
-<img width="276" height="118" alt="Nexus" src="https://github.com/user-attachments/assets/fffb4645-d719-4988-938a-bef235ac5283" />
+<br/>
 
-### local workflows, memory, agents, and automation in a native macOS workspace
+```
+  ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗
+  ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝
+  ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗
+  ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║
+  ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
+  ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+```
 
-<br>
+### *the agent harness that turns any local model into an autonomous personal assistant*
+
+<br/>
+
+![latency](https://img.shields.io/badge/latency-70ms-white?style=flat-square&labelColor=0a0a0a)
+![MCPs](https://img.shields.io/badge/MCPs-500+-white?style=flat-square&labelColor=0a0a0a)
+![macOS](https://img.shields.io/badge/macOS-14+-white?style=flat-square&labelColor=0a0a0a)
+
+<br/>
 
 <p align="center">
   <img height="120" src="https://github.com/user-attachments/assets/93917c1c-65bd-415e-8ed2-681c5e43e7ee" />
@@ -13,199 +28,176 @@
   <img height="120" src="https://github.com/user-attachments/assets/9ef93fdd-6f96-43b2-af54-99014ca28caa" />
 </p>
 
+<br/>
+
+> **100% local, zero cloud** 
+
 </div>
 
-## What Nexus Is
+---
 
-Nexus is a local-first macOS workspace for turning intent into executable workflows. It pairs a SwiftUI native app with a small Node runtime that can generate, save, run, and remember automation nodes across browser actions, files, shell commands, HTTP calls, MCP tools, and local AI.
+<div align="center">
 
-The goal is simple: a serious personal automation system that runs on your machine, keeps its state local, and gives you a visual place to build the work.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  BROWSER  ·  FILESYSTEM  ·  SHELL  ·  HTTP  ·  MCP  ·  AI       │
+│                     ↓  workflow primitives  ↓                   │
+│                     [ NEXUS AGENT HARNESS ]                     │
+│                      ↓  local inference  ↓                      │
+│         OLLAMA  ·  LM STUDIO  ·  OPENAI-COMPAT                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-## Requirements
+</div>
 
-- macOS 14 or newer
-- Xcode command line tools or Xcode
-- Node.js 20 or newer
-- npm
-- Ollama for local model support
-- Docker only if you want local semantic memory through Qdrant
+---
 
-Install the JavaScript dependencies once:
+## ◈ quickstart
+
+**1 — install deps**
 
 ```bash
 npm install
 ```
 
-## Run Nexus
-
-Build and open the native app:
+**2 — launch**
 
 ```bash
 ./run.sh
 ```
 
-Build without opening:
+> builds the native app bundle and opens it. that's it.
 
-```bash
-./run.sh --no-open
-```
+---
 
-The script creates:
+## ◈ engine
 
-```text
-native-macos/dist/Nexus.app
-```
-
-Open the Swift package directly when you want to work in Xcode:
-
-```bash
-open native-macos/Package.swift
-```
-
-Select the `LocalWorkflowStudioNative` scheme, then build and run.
-
-## Local Engine
-
-The app starts the engine automatically when needed. For engine-only development, run:
+the engine starts automatically inside the app. for standalone engine development:
 
 ```bash
 npm start
 ```
 
-Health check:
+confirm it's alive:
 
-```text
-http://127.0.0.1:3131/health
+```
+GET http://127.0.0.1:3131/health
 ```
 
-Core routes:
+### api surface
 
-```text
-POST /node/generate
-POST /node/save
-GET  /node/list
-POST /node/run
-POST /nex/complete
-POST /brain/prepare
-GET  /memory/health
+```
+POST  /node/generate      →  generate a workflow node
+POST  /node/save          →  persist a node
+GET   /node/list          →  list saved nodes
+POST  /node/run           →  execute a node
+POST  /nex/complete       →  agent completion
+POST  /brain/prepare      →  prepare model context
+GET   /memory/health      →  vector memory status
 ```
 
-Supported workflow primitives:
+---
 
-- Browser
-- Filesystem
-- Shell
-- HTTP
-- MCP
-- AI inference
+## ◈ local ai
 
-## Local AI
-
-Nexus uses Ollama by default.
+nexus runs on **ollama** by default — fully offline, no keys, no calls home.
 
 ```bash
-npm run model:serve
-npm run model:pull
+npm run model:serve    # start ollama
+npm run model:pull     # pull default models
 ```
 
-`npm run model:pull` downloads:
+`model:pull` fetches:
 
-```text
-qwen2.5-coder:1.5b
-nomic-embed-text
+```
+qwen2.5-coder:1.5b   →  lightweight planner
+nomic-embed-text     →  semantic embeddings
 ```
 
-The engine default is `qwen2.5-coder:7b`. Pull it when you want the default model available:
+the engine default is `qwen2.5-coder:7b`. pull it for full power:
 
 ```bash
 ollama pull qwen2.5-coder:7b
 ```
 
-Use a smaller model for lighter machines:
+running on a lighter machine? dial it back:
 
 ```bash
 OLLAMA_MODEL=qwen2.5-coder:1.5b npm start
 ```
 
-Inside the app, the Nex Brain view can prepare and switch between Ollama, LM Studio, and OpenAI-compatible providers.
+> switch between **ollama**, **lm studio**, and **openai-compatible** providers live inside the app via the nex brain view — no restart needed.
 
-## Memory
+---
 
-Semantic memory is optional. Start Qdrant when you want Nexus to store and retrieve local workflow context.
+## ◈ memory
+
+semantic memory is opt-in. when enabled, nexus stores and retrieves local workflow context via **qdrant** — a self-hosted vector db.
 
 ```bash
-npm run memory:pull
-npm run memory:start
+npm run memory:pull     # pull qdrant image
+npm run memory:start    # spin it up
 ```
 
-Dashboard:
+dashboard lives at:
 
-```text
+```
 http://127.0.0.1:6333/dashboard
 ```
 
-Stop memory:
+storage path: `./qdrant_storage`
 
 ```bash
-npm run memory:stop
+npm run memory:stop     # shut it down
 ```
 
-Local storage:
+---
 
-```text
-./qdrant_storage
-```
+## ◈ development
 
-## Development
-
-Run the Node runtime tests:
-
+**node runtime tests**
 ```bash
 npm test
 ```
 
-Run native model tests:
-
+**native model tests**
 ```bash
 cd native-macos
 swift run LocalWorkflowStudioNativeModelTests
 ```
 
-Run native integration tests:
-
+**native integration tests**
 ```bash
 cd native-macos
 swift run LocalWorkflowStudioNativeIntegrationTests
 ```
 
-Build the app bundle directly:
-
+**build app bundle**
 ```bash
 cd native-macos
 ./scripts/build-app.sh
 ```
 
-## Project Shape
+---
 
-```text
-src/                         Node workflow engine
-tests/                       Engine tests
-native-macos/                SwiftUI macOS app
-native-macos/scripts/        App bundle build script
-docs/                        Design, implementation, and QA notes
-docker-compose.yml           Optional Qdrant memory service
-```
+## ◈ environment
 
-## Environment
+most contributors never need to touch these. they're here when you do.
 
-Most contributors do not need to set environment variables. These are available when you need control:
+| variable | default | description |
+|---|---|---|
+| `PORT` | `3131` | engine port |
+| `OLLAMA_MODEL` | `qwen2.5-coder:7b` | planner model |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | ollama endpoint |
+| `NEXUS_ENGINE_ROOT` | — | override engine path |
+| `NEXUS_NODE_STORE` | — | override sqlite path |
+| `NEXUS_MEMORY_ENABLED` | `1` | set to `0` to disable qdrant |
+| `NEXUS_QDRANT_URL` | `http://127.0.0.1:6333` | qdrant endpoint |
 
-```text
-PORT                         Engine port, default 3131
-OLLAMA_MODEL                 Planner model, default qwen2.5-coder:7b
-OLLAMA_BASE_URL              Ollama URL, default http://127.0.0.1:11434
-NEXUS_ENGINE_ROOT            Override engine path for the native app
-NEXUS_NODE_STORE             Override saved-node SQLite path
-NEXUS_MEMORY_ENABLED=0       Disable Qdrant memory
-NEXUS_QDRANT_URL             Qdrant HTTP URL, default http://127.0.0.1:6333
-```
+---
+
+<div align="center">
+
+![MIT License](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=0a0a0a)
+
+</div>
