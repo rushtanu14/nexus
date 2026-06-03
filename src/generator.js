@@ -7,7 +7,7 @@ const PRIMITIVES = [
   "fs_read", "fs_write", "shell_run", "http_request", "mcp_call", "ai_infer"
 ];
 
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5-coder:1.5b";
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5-coder:7b";
 export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

@@ -31,6 +31,8 @@ final class SpeechTranscriber {
     private var hasInputTap = false
     private var silenceTask: Task<Void, Never>?
     private var shouldAutoStopAfterSilence = false
+    private var recordingStartedAt: Date?
+    private var lastVoiceHeardAt: Date?
 
     func start(autoStopAfterSilence: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
         guard !isRecording else { return }
@@ -67,6 +69,8 @@ final class SpeechTranscriber {
         task = nil
         request = nil
         shouldAutoStopAfterSilence = false
+        recordingStartedAt = nil
+        lastVoiceHeardAt = nil
         isRecording = false
         status = "Ready"
         finalHandler?(transcript)
@@ -85,6 +89,8 @@ final class SpeechTranscriber {
         task = nil
         request = nil
         shouldAutoStopAfterSilence = false
+        recordingStartedAt = nil
+        lastVoiceHeardAt = nil
         isRecording = false
         failureHandler?(message)
         clearHandlers()
@@ -120,17 +126,25 @@ final class SpeechTranscriber {
 
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             request.append(buffer)
+            guard let level = Self.audioLevel(from: buffer), level > -42 else { return }
+            Task { @MainActor in
+                guard self?.shouldAutoStopAfterSilence == true else { return }
+                self?.lastVoiceHeardAt = Date()
+            }
         }
         hasInputTap = true
         audioEngine.prepare()
         do {
             try audioEngine.start()
             isRecording = true
+            recordingStartedAt = Date()
+            lastVoiceHeardAt = Date()
             status = "Listening"
             startHandler?()
             startHandler = nil
+            startSilenceMonitorIfNeeded()
         } catch {
             status = error.localizedDescription
             return false
@@ -140,8 +154,7 @@ final class SpeechTranscriber {
             Task { @MainActor in
                 if let result {
                     self?.transcript = result.bestTranscription.formattedString
-                    self?.scheduleSilenceStopIfNeeded()
-                    if result.isFinal { self?.stop() }
+                    if result.isFinal, self?.shouldAutoStopAfterSilence == false { self?.stop() }
                 } else if let error {
                     self?.status = error.localizedDescription
                     self?.stop()
@@ -151,18 +164,42 @@ final class SpeechTranscriber {
         return true
     }
 
-    private func scheduleSilenceStopIfNeeded() {
-        guard shouldAutoStopAfterSilence, isRecording, !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
+    private func startSilenceMonitorIfNeeded() {
+        guard shouldAutoStopAfterSilence else { return }
         silenceTask?.cancel()
         silenceTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            await MainActor.run {
-                guard let self, self.isRecording, self.shouldAutoStopAfterSilence else { return }
-                self.stop()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                let shouldStop = await MainActor.run {
+                    guard let self,
+                          self.isRecording,
+                          self.shouldAutoStopAfterSilence,
+                          !self.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                          let recordingStartedAt = self.recordingStartedAt,
+                          let lastVoiceHeardAt = self.lastVoiceHeardAt else {
+                        return false
+                    }
+                    let now = Date()
+                    return now.timeIntervalSince(recordingStartedAt) >= 1.8 && now.timeIntervalSince(lastVoiceHeardAt) >= 0.85
+                }
+                if shouldStop {
+                    await MainActor.run { self?.stop() }
+                    return
+                }
             }
         }
+    }
+
+    private static func audioLevel(from buffer: AVAudioPCMBuffer) -> Float? {
+        guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return nil }
+        let frameCount = Int(buffer.frameLength)
+        var sum: Float = 0
+        for index in 0..<frameCount {
+            let sample = channel[index]
+            sum += sample * sample
+        }
+        let rms = sqrt(sum / Float(frameCount))
+        return 20 * log10(max(rms, 0.000_001))
     }
 }
 

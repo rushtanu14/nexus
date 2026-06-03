@@ -88,9 +88,9 @@ struct ContentView: View {
 
             if nexVoice.isVisible {
                 FloatingNexOverlay(model: model, voice: nexVoice)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.trailing, 18)
-                    .padding(.bottom, 108)
+                    .padding(.top, 78)
                     .zIndex(2)
             }
         }
@@ -587,6 +587,7 @@ private struct HubWorkflowCard: View {
 private struct NexEchoSurface: View {
     @Bindable var model: StudioModel
     @Bindable var store: EchoStore
+    @State private var isEditingNotes = false
 
     var body: some View {
         ReactiveBackgroundContainer(color: StudioPalette.canvas) {
@@ -594,7 +595,7 @@ private struct NexEchoSurface: View {
                 VStack(alignment: .leading, spacing: 14) {
                         HStack {
                             Text("ECHOS")
-                            .font(StudioType.metadata)
+                            .font(StudioType.echoMetadata)
                             .tracking(1.2)
                             .foregroundStyle(StudioPalette.muted)
                         Spacer()
@@ -605,7 +606,7 @@ private struct NexEchoSurface: View {
                     }
                     if store.sessions.isEmpty {
                         Text("Start a recording to create your first echo.")
-                            .font(StudioType.secondary)
+                            .font(StudioType.echoSecondary)
                             .foregroundStyle(StudioPalette.muted)
                     } else {
                         ForEach(store.sessions) { session in
@@ -614,9 +615,9 @@ private struct NexEchoSurface: View {
                                     store.select(session)
                                 } label: {
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(session.name).font(StudioType.body.weight(.medium))
+                                        Text(session.name).font(StudioType.echoBody.weight(.medium))
                                         Text(session.createdAt, style: .date)
-                                            .font(StudioType.metadata)
+                                            .font(StudioType.echoMetadata)
                                             .foregroundStyle(StudioPalette.muted)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -647,15 +648,15 @@ private struct NexEchoSurface: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Nex Echo")
-                                .font(StudioType.pageTitle)
+                                .font(StudioType.echoTitle)
                             Text("Low-latency voice transcription and polished meeting notes.")
-                                .font(StudioType.secondary)
+                                .font(StudioType.echoSecondary)
                                 .foregroundStyle(StudioPalette.muted)
                         }
                         Spacer()
                         TimelineView(.periodic(from: .now, by: 1)) { _ in
                             Text(Self.duration(store.elapsed))
-                                .font(.system(size: 14, design: .monospaced).monospaced())
+                                .font(StudioType.code)
                                 .foregroundStyle(StudioPalette.accentBright)
                         }
                         Button(action: store.toggleRecording) {
@@ -669,7 +670,7 @@ private struct NexEchoSurface: View {
                     } else {
                         HStack {
                             TextField("Echo name", text: $store.sessionName)
-                                .font(StudioType.cardTitle)
+                                .font(StudioType.echoCardTitle)
                                 .textFieldStyle(.roundedBorder)
                                 .onSubmit { store.renameSelected(store.sessionName) }
                             Button("save name") { store.renameSelected(store.sessionName) }
@@ -683,9 +684,10 @@ private struct NexEchoSurface: View {
                         }
                         HSplitView {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("LIVE TRANSCRIPT").font(StudioType.metadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
+                                Text("LIVE TRANSCRIPT").font(StudioType.echoMetadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
                                 ScrollView {
                                     MarkdownText(store.transcriber.isRecording ? store.transcriber.transcript : (store.selectedSession?.transcript ?? ""))
+                                        .font(StudioType.echoBody)
                                 }
                             }
                             .padding(14)
@@ -693,26 +695,34 @@ private struct NexEchoSurface: View {
 
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
-                                Text("NOTES").font(StudioType.metadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
+                                Text("NOTES").font(StudioType.echoMetadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
                                     Spacer()
+                                    Button(isEditingNotes ? "done editing" : "edit raw") { isEditingNotes.toggle() }
+                                        .buttonStyle(SecondaryButtonStyle())
                                     Button("polish with nex") { store.polishNotes(using: model) }
                                         .buttonStyle(SecondaryButtonStyle())
                                 }
-                                TextEditor(text: Binding(get: { store.selectedSession?.notes ?? "" }, set: { store.updateNotes($0) }))
-                                    .font(StudioType.body)
-                                    .scrollContentBackground(.hidden)
-                                ScrollView {
-                                    MarkdownText(store.selectedSession?.notes ?? "")
+                                if isEditingNotes {
+                                    TextEditor(text: Binding(get: { store.selectedSession?.notes ?? "" }, set: { store.updateNotes($0) }))
+                                        .font(StudioType.echoBody)
+                                        .scrollContentBackground(.hidden)
+                                        .background(StudioPalette.panelStrong)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                } else {
+                                    ScrollView {
+                                        MarkdownText(store.selectedSession?.notes ?? "")
+                                            .font(StudioType.echoBody)
+                                            .padding(10)
+                                    }
+                                    .background(StudioPalette.panelStrong)
+                                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                                 }
-                                .frame(minHeight: 120)
-                                .background(StudioPalette.panelStrong)
-                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                             }
                             .padding(14)
                             .background(StudioPalette.panel)
                         }
                         Text(store.status)
-                            .font(StudioType.secondary)
+                            .font(StudioType.echoSecondary)
                             .foregroundStyle(StudioPalette.muted)
                     }
                 }
@@ -2101,13 +2111,90 @@ private struct MarkdownText: View {
     }
 
     var body: some View {
-        Text(markdown)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .blank:
+                    Spacer(minLength: 8)
+                case .heading(let level, let content):
+                    Text(inlineMarkdown(content))
+                        .font(headingFont(level))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, level == 1 ? 4 : 2)
+                case .bullet(let content):
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("•")
+                        Text(inlineMarkdown(content))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                case .numbered(let number, let content):
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("\(number).")
+                            .frame(minWidth: 22, alignment: .trailing)
+                        Text(inlineMarkdown(content))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                case .paragraph(let content):
+                    Text(inlineMarkdown(content))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
     }
 
-    private var markdown: AttributedString {
-        (try? AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full))) ?? AttributedString(text)
+    private var blocks: [MarkdownBlock] {
+        text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { MarkdownBlock(String($0)) }
+    }
+
+    private func inlineMarkdown(_ value: String) -> AttributedString {
+        (try? AttributedString(markdown: value, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(value)
+    }
+
+    private func headingFont(_ level: Int) -> Font {
+        switch level {
+        case 1: return StudioType.sectionTitle
+        case 2: return StudioType.cardTitle
+        default: return StudioType.body.weight(.semibold)
+        }
+    }
+}
+
+private enum MarkdownBlock {
+    case blank
+    case heading(level: Int, content: String)
+    case bullet(content: String)
+    case numbered(number: Int, content: String)
+    case paragraph(content: String)
+
+    init(_ rawLine: String) {
+        let line = rawLine.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty {
+            self = .blank
+            return
+        }
+        let headingPrefix = line.prefix(while: { $0 == "#" })
+        if !headingPrefix.isEmpty,
+           headingPrefix.count <= 6,
+           line.dropFirst(headingPrefix.count).first == " " {
+            self = .heading(level: headingPrefix.count, content: String(line.dropFirst(headingPrefix.count + 1)))
+            return
+        }
+        if line.hasPrefix("- ") || line.hasPrefix("* ") {
+            self = .bullet(content: String(line.dropFirst(2)))
+            return
+        }
+        if let dot = line.firstIndex(of: "."),
+           let number = Int(line[..<dot]),
+           line[line.index(after: dot)...].first == " " {
+            self = .numbered(number: number, content: String(line[line.index(line.startIndex, offsetBy: String(number).count + 2)...]))
+            return
+        }
+        self = .paragraph(content: line)
     }
 }
 
@@ -2507,14 +2594,69 @@ private struct FloatingAnimatedNexPet: View {
 }
 
 enum StudioType {
-    static let brandWordmark = Font.system(size: 14, design: .serif).weight(.bold)
-    static let pageTitle = Font.system(size: 32, design: .serif).weight(.bold)
-    static let sectionTitle = Font.system(size: 24).weight(.semibold)
-    static let cardTitle = Font.system(size: 18).weight(.semibold)
-    static let body = Font.system(size: 14).weight(.regular)
-    static let secondary = Font.system(size: 12).weight(.regular)
-    static let metadata = Font.system(size: 11).weight(.medium)
-    static let button = Font.system(size: 14).weight(.medium)
+    static let brandWordmark = FontStacks.main(size: 14).weight(.bold)
+    static let pageTitle = FontStacks.main(size: 32).weight(.bold)
+    static let sectionTitle = FontStacks.main(size: 24).weight(.semibold)
+    static let cardTitle = FontStacks.main(size: 18).weight(.semibold)
+    static let body = FontStacks.main(size: 14).weight(.regular)
+    static let secondary = FontStacks.main(size: 12).weight(.regular)
+    static let metadata = FontStacks.main(size: 11).weight(.medium)
+    static let button = FontStacks.main(size: 14).weight(.medium)
+    static let code = FontStacks.mono(size: 11).weight(.regular)
+
+    static let echoTitle = FontStacks.echo(size: 32).weight(.bold)
+    static let echoCardTitle = FontStacks.echo(size: 18).weight(.semibold)
+    static let echoBody = FontStacks.echo(size: 14).weight(.regular)
+    static let echoSecondary = FontStacks.echo(size: 12).weight(.regular)
+    static let echoMetadata = FontStacks.echo(size: 11).weight(.medium)
+}
+
+private enum FontStacks {
+    private static let mainNames = [
+        "Sohne",
+        "Söhne",
+        "Sohne-Regular",
+        "Söhne-Regular",
+        "Geist",
+        "Geist-Regular",
+        "Instrument Serif",
+        "InstrumentSerif-Regular"
+    ]
+    private static let echoNames = [
+        "Instrument Serif",
+        "InstrumentSerif-Regular",
+        "InstrumentSerif",
+        "Sohne",
+        "Söhne",
+        "Geist"
+    ]
+    private static let monoNames = [
+        "Berkeley Mono",
+        "BerkeleyMono-Regular",
+        "BerkeleyMono",
+        "Geist Mono",
+        "GeistMono-Regular",
+        "Menlo"
+    ]
+
+    static func main(size: CGFloat) -> Font {
+        resolvedFont(names: mainNames, size: size, fallback: .system(size: size))
+    }
+
+    static func echo(size: CGFloat) -> Font {
+        resolvedFont(names: echoNames, size: size, fallback: .system(size: size, design: .serif))
+    }
+
+    static func mono(size: CGFloat) -> Font {
+        resolvedFont(names: monoNames, size: size, fallback: .system(size: size, design: .monospaced))
+    }
+
+    private static func resolvedFont(names: [String], size: CGFloat, fallback: Font) -> Font {
+        if let installed = names.first(where: { NSFont(name: $0, size: size) != nil }) {
+            return .custom(installed, fixedSize: size)
+        }
+        return fallback
+    }
 }
 
 // MARK: - Button Styles — Geometric / Angular

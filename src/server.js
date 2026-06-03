@@ -198,7 +198,7 @@ async function completeWithNex(prompt, brain, memoryContext) {
   ].join("\n\n");
 
   if (provider === "ollama") {
-    const baseUrl = String(brain.baseUrl || OLLAMA_BASE_URL).replace(/\/$/, "");
+    const baseUrl = ollamaBaseUrl(brain.baseUrl);
     const response = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -230,7 +230,7 @@ async function prepareBrain(brain) {
   const provider = brain.provider ?? "ollama";
   const model = brain.model || OLLAMA_MODEL;
   if (provider === "ollama") {
-    const baseUrl = String(brain.baseUrl || OLLAMA_BASE_URL).replace(/\/$/, "");
+    const baseUrl = ollamaBaseUrl(brain.baseUrl);
     const response = await fetch(`${baseUrl}/api/pull`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -248,6 +248,12 @@ async function prepareBrain(brain) {
     return `Prepared ${model} with LM Studio`;
   }
   return "OpenAI-compatible providers do not require local preparation";
+}
+
+function ollamaBaseUrl(configuredBaseUrl) {
+  const configured = String(configuredBaseUrl ?? "").trim();
+  if (!configured || configured.includes("api.openai.com")) return OLLAMA_BASE_URL;
+  return configured.replace(/\/$/, "");
 }
 
 async function ensureMemoryOnLaunch() {
