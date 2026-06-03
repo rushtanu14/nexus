@@ -7,6 +7,7 @@ import AppKit
 struct LocalWorkflowStudioNativeApp: App {
     @State private var model = StudioModel()
     @State private var nexVoice = NexVoiceStore()
+    @State private var echoStore = EchoStore()
 
     init() {
         NSApplication.shared.setActivationPolicy(.regular)
@@ -14,7 +15,7 @@ struct LocalWorkflowStudioNativeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(model: model, nexVoice: nexVoice)
+            ContentView(model: model, nexVoice: nexVoice, echoStore: echoStore)
                 .frame(minWidth: 1180, idealWidth: 1560, minHeight: 760, idealHeight: 940)
                 .onAppear {
                     NSApplication.shared.activate(ignoringOtherApps: true)
@@ -27,6 +28,26 @@ struct LocalWorkflowStudioNativeApp: App {
         }
         .defaultSize(width: 1560, height: 940)
         .windowResizability(.contentMinSize)
+        MenuBarExtra(isInserted: Binding(get: {
+            echoStore.transcriber.isRecording
+        }, set: { _ in })) {
+            Button("Pause") {
+                echoStore.pauseRecording()
+            }
+            Button("Stop") {
+                echoStore.stopRecording()
+            }
+            Divider()
+            Button("Make Note") {
+                echoStore.makeNoteFromTranscript()
+            }
+            Button("Echo Dashboard") {
+                echoStore.requestDashboard()
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+        } label: {
+            Image(systemName: echoStore.transcriber.isRecording ? "waveform.circle.fill" : "waveform.circle")
+        }
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Generate Workflow") {

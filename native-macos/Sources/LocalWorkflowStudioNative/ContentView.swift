@@ -7,10 +7,10 @@ import LocalWorkflowStudioCore
 struct ContentView: View {
     @Bindable var model: StudioModel
     @Bindable var nexVoice: NexVoiceStore
+    @Bindable var echoStore: EchoStore
     @State private var walkthroughOpen = false
     @State private var walkthroughStepIndex = 0
     @State private var selectedSection: StudioSection = .hub
-    @State private var echoStore = EchoStore()
 
     var body: some View {
         GeometryReader { proxy in
@@ -33,6 +33,9 @@ struct ContentView: View {
             default: selectedSection = .workflows
             }
             nexVoice.requestedSection = nil
+        }
+        .onChange(of: echoStore.dashboardRequest) { _, _ in
+            selectedSection = .echo
         }
     }
 
@@ -85,6 +88,9 @@ struct ContentView: View {
 
             if nexVoice.isVisible {
                 FloatingNexOverlay(model: model, voice: nexVoice)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 18)
+                    .padding(.bottom, 108)
                     .zIndex(2)
             }
         }
@@ -603,21 +609,32 @@ private struct NexEchoSurface: View {
                             .foregroundStyle(StudioPalette.muted)
                     } else {
                         ForEach(store.sessions) { session in
-                            Button {
-                                store.select(session)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(session.name).font(StudioType.body.weight(.medium))
-                                    Text(session.createdAt, style: .date)
-                                        .font(StudioType.metadata)
-                                        .foregroundStyle(StudioPalette.muted)
+                            HStack(spacing: 6) {
+                                Button {
+                                    store.select(session)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(session.name).font(StudioType.body.weight(.medium))
+                                        Text(session.createdAt, style: .date)
+                                            .font(StudioType.metadata)
+                                            .foregroundStyle(StudioPalette.muted)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .padding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(store.selectedID == session.id ? StudioPalette.accentSoft : StudioPalette.panel)
-                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .buttonStyle(.plain)
+                                Button {
+                                    store.select(session)
+                                    store.deleteSelected()
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(IconButtonStyle())
+                                .help("Delete echo")
                             }
-                            .buttonStyle(.plain)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(store.selectedID == session.id ? StudioPalette.accentSoft : StudioPalette.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                         }
                     }
                     Spacer()
@@ -657,15 +674,18 @@ private struct NexEchoSurface: View {
                                 .onSubmit { store.renameSelected(store.sessionName) }
                             Button("save name") { store.renameSelected(store.sessionName) }
                                 .buttonStyle(SecondaryButtonStyle())
+                            Button(role: .destructive) {
+                                store.deleteSelected()
+                            } label: {
+                                Label("delete", systemImage: "trash")
+                            }
+                            .buttonStyle(SecondaryButtonStyle())
                         }
                         HSplitView {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("LIVE TRANSCRIPT").font(StudioType.metadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
                                 ScrollView {
-                                    Text(store.transcriber.isRecording ? store.transcriber.transcript : (store.selectedSession?.transcript ?? ""))
-                                        .font(StudioType.body)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .textSelection(.enabled)
+                                    MarkdownText(store.transcriber.isRecording ? store.transcriber.transcript : (store.selectedSession?.transcript ?? ""))
                                 }
                             }
                             .padding(14)
@@ -681,6 +701,12 @@ private struct NexEchoSurface: View {
                                 TextEditor(text: Binding(get: { store.selectedSession?.notes ?? "" }, set: { store.updateNotes($0) }))
                                     .font(StudioType.body)
                                     .scrollContentBackground(.hidden)
+                                ScrollView {
+                                    MarkdownText(store.selectedSession?.notes ?? "")
+                                }
+                                .frame(minHeight: 120)
+                                .background(StudioPalette.panelStrong)
+                                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                             }
                             .padding(14)
                             .background(StudioPalette.panel)
@@ -900,9 +926,8 @@ private struct PromptPanel: View {
                         Label("task completed", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12).weight(.bold))
                             .foregroundStyle(StudioPalette.accentBright)
-                        Text(output)
-                            .font(.system(size: 11, design: .monospaced).monospaced())
-                            .textSelection(.enabled)
+                        MarkdownText(output)
+                            .font(.system(size: 11))
                             .lineLimit(6)
                     }
                     .padding(12)
@@ -1445,11 +1470,10 @@ private struct InspectorPanel: View {
 
                             if let output = model.workflow.executionOutput {
                                 InspectorSection(title: "Last Output") {
-                                    Text(output)
-                                        .font(.system(size: 11, design: .monospaced).monospaced())
+                                    MarkdownText(output)
+                                        .font(.system(size: 11))
                                         .foregroundStyle(StudioPalette.accentBright)
                                         .padding(12)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
                                         .background(StudioPalette.codeBackground)
                                         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                                 }
@@ -2058,15 +2082,32 @@ private struct Bubble: View {
             Text(sender)
                 .font(.system(size: 10).weight(.bold))
                 .foregroundStyle(StudioPalette.muted)
-            Text(text)
+            MarkdownText(text)
                 .font(.system(size: 13))
-                .foregroundStyle(StudioPalette.text)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: alignRight ? .trailing : .leading)
         .background(alignRight ? StudioPalette.userBubble : StudioPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+    }
+}
+
+private struct MarkdownText: View {
+    var text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(markdown)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+    }
+
+    private var markdown: AttributedString {
+        (try? AttributedString(markdown: text, options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .full))) ?? AttributedString(text)
     }
 }
 
@@ -2343,19 +2384,18 @@ private struct NexPetView: View {
 private struct FloatingNexOverlay: View {
     @Bindable var model: StudioModel
     @Bindable var voice: NexVoiceStore
-    @State private var offset = CGSize(width: 430, height: 250)
-    @State private var dragOrigin = CGSize(width: 430, height: 250)
-    @State private var petScale: CGFloat = 0.58
-    @State private var petScaleOrigin: CGFloat = 0.58
+    @State private var offset = CGSize.zero
+    @State private var dragOrigin = CGSize.zero
+    @State private var petScale: CGFloat = 1.05
+    @State private var petScaleOrigin: CGFloat = 1.05
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
-                Text(voice.transcriber.isRecording ? (voice.transcriber.transcript.isEmpty ? "Listening..." : voice.transcriber.transcript) : voice.response)
+                MarkdownText(voice.transcriber.isRecording ? (voice.transcriber.transcript.isEmpty ? "Listening..." : voice.transcriber.transcript) : voice.response)
                     .font(StudioType.body)
-                    .foregroundStyle(StudioPalette.text)
                     .padding(10)
-                    .frame(width: 240, alignment: .leading)
+                    .frame(width: 330, alignment: .leading)
                     .background(StudioPalette.panel)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
@@ -2384,7 +2424,7 @@ private struct FloatingNexOverlay: View {
                         .gesture(
                             DragGesture()
                                 .onChanged { value in
-                                    petScale = min(max(petScaleOrigin + value.translation.width / 320, 0.22), 0.9)
+                                    petScale = min(max(petScaleOrigin + value.translation.width / 320, 0.35), 1.35)
                                 }
                                 .onEnded { _ in petScaleOrigin = petScale }
                         )

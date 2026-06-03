@@ -29,9 +29,12 @@ final class SpeechTranscriber {
     private var startHandler: (() -> Void)?
     private var failureHandler: ((String) -> Void)?
     private var hasInputTap = false
+    private var silenceTask: Task<Void, Never>?
+    private var shouldAutoStopAfterSilence = false
 
-    func start(onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
+    func start(autoStopAfterSilence: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
         guard !isRecording else { return }
+        shouldAutoStopAfterSilence = autoStopAfterSilence
         startHandler = onStart
         failureHandler = onFailure
         finalHandler = onFinal
@@ -50,6 +53,8 @@ final class SpeechTranscriber {
 
     func stop() {
         guard isRecording || hasInputTap else { return }
+        silenceTask?.cancel()
+        silenceTask = nil
         if audioEngine.isRunning {
             audioEngine.stop()
         }
@@ -61,6 +66,7 @@ final class SpeechTranscriber {
         task?.cancel()
         task = nil
         request = nil
+        shouldAutoStopAfterSilence = false
         isRecording = false
         status = "Ready"
         finalHandler?(transcript)
@@ -68,6 +74,8 @@ final class SpeechTranscriber {
     }
 
     private func finishStartFailure(_ message: String) {
+        silenceTask?.cancel()
+        silenceTask = nil
         if hasInputTap {
             audioEngine.inputNode.removeTap(onBus: 0)
             hasInputTap = false
@@ -76,6 +84,7 @@ final class SpeechTranscriber {
         task?.cancel()
         task = nil
         request = nil
+        shouldAutoStopAfterSilence = false
         isRecording = false
         failureHandler?(message)
         clearHandlers()
@@ -131,6 +140,7 @@ final class SpeechTranscriber {
             Task { @MainActor in
                 if let result {
                     self?.transcript = result.bestTranscription.formattedString
+                    self?.scheduleSilenceStopIfNeeded()
                     if result.isFinal { self?.stop() }
                 } else if let error {
                     self?.status = error.localizedDescription
@@ -139,6 +149,20 @@ final class SpeechTranscriber {
             }
         }
         return true
+    }
+
+    private func scheduleSilenceStopIfNeeded() {
+        guard shouldAutoStopAfterSilence, isRecording, !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        silenceTask?.cancel()
+        silenceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            await MainActor.run {
+                guard let self, self.isRecording, self.shouldAutoStopAfterSilence else { return }
+                self.stop()
+            }
+        }
     }
 }
 
@@ -196,6 +220,7 @@ final class EchoStore {
     var selectedID: UUID?
     var sessionName = ""
     var status = "Ready"
+    var dashboardRequest = 0
     let transcriber = SpeechTranscriber()
     private var recordingStartedAt: Date?
     private let defaultsKey = "NexusEchoSessions"
@@ -248,6 +273,20 @@ final class EchoStore {
         selectedID = currentID
     }
 
+    func deleteSelected() {
+        guard let selectedID else { return }
+        if transcriber.isRecording { stopRecording() }
+        sessions.removeAll(where: { $0.id == selectedID })
+        self.selectedID = sessions.first?.id
+        sessionName = sessions.first?.name ?? ""
+        status = sessions.isEmpty ? "Ready" : "Echo deleted"
+        persist()
+    }
+
+    func requestDashboard() {
+        dashboardRequest += 1
+    }
+
     func toggleRecording() {
         if transcriber.isRecording {
             stopRecording()
@@ -278,6 +317,27 @@ final class EchoStore {
         transcriber.stop()
         saveTranscript(transcriber.transcript)
         status = "Ready"
+    }
+
+    func pauseRecording() {
+        transcriber.stop()
+        saveTranscript(transcriber.transcript)
+        status = "Paused"
+    }
+
+    func makeNoteFromTranscript() {
+        guard let index = selectedIndex else { return }
+        let source = transcriber.isRecording ? transcriber.transcript : sessions[index].transcript
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            status = "No transcript to note yet"
+            return
+        }
+        let stamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .short)
+        let addition = "\n\n### Note \(stamp)\n\(trimmed)"
+        sessions[index].notes = sessions[index].notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? addition.trimmingCharacters(in: .whitespacesAndNewlines) : sessions[index].notes + addition
+        status = "Note added"
+        persist()
     }
 
     func updateNotes(_ notes: String) {
@@ -340,12 +400,16 @@ final class NexVoiceStore {
         if transcriber.isRecording {
             transcriber.stop()
         } else {
-            transcriber.start(onFinal: { [weak self] transcript in
+            transcriber.start(autoStopAfterSilence: true, onFinal: { [weak self] transcript in
                 guard !transcript.isEmpty else { return }
                 self?.response = "Thinking..."
                 Task {
                     do {
-                        self?.route(transcript, using: model)
+                        if let spoken = self?.route(transcript, using: model) {
+                            self?.response = spoken
+                            NexSpeechOutput.shared.speak(spoken)
+                            return
+                        }
                         let reply = try await model.completeWithNex(transcript)
                         self?.response = reply
                         NexSpeechOutput.shared.speak(reply)
@@ -362,18 +426,34 @@ final class NexVoiceStore {
         if !transcriber.isRecording { toggle(using: model) }
     }
 
-    private func route(_ prompt: String, using model: StudioModel) {
+    private func route(_ prompt: String, using model: StudioModel) -> String? {
         let lower = prompt.lowercased()
-        if lower.contains("echo") || lower.contains("meeting") || lower.contains("notes") { requestedSection = "echo" }
-        else if lower.contains("brain") || lower.contains("model") { requestedSection = "brain" }
-        else if lower.contains("hub") || lower.contains("workflow list") { requestedSection = "hub" }
-        else if lower.contains("clear canvas") { model.clearCanvas(); requestedSection = "workflows" }
-        else if lower.contains("delete selected node") || lower.contains("remove selected node") { model.deleteSelectedCanvasNode(); requestedSection = "workflows" }
+        if lower.contains("echo") || lower.contains("meeting") || lower.contains("notes") { requestedSection = "echo"; return nil }
+        else if lower.contains("brain") || lower.contains("model") { requestedSection = "brain"; return nil }
+        else if lower.contains("hub") || lower.contains("workflow list") { requestedSection = "hub"; return nil }
+        else if lower.contains("clear canvas") { model.clearCanvas(); requestedSection = "workflows"; return "Yes, I cleared the canvas." }
+        else if lower.contains("delete selected node") || lower.contains("remove selected node") { model.deleteSelectedCanvasNode(); requestedSection = "workflows"; return "Yes, I removed the selected node." }
         else if lower.contains("automation") || lower.contains("node") || lower.contains("nexspace") {
             requestedSection = "workflows"
             requestedAutomation = prompt
+            if needsWebsiteLink(prompt) {
+                return "I can build that automation. Which exact website link should I use?"
+            }
             model.prompt = prompt
             model.generateWorkflow()
+            return automationProcessSummary(prompt)
         }
+        return nil
+    }
+
+    private func needsWebsiteLink(_ prompt: String) -> Bool {
+        let lower = prompt.lowercased()
+        guard lower.contains("website") || lower.contains("site") || lower.contains("web app") else { return false }
+        return !lower.contains("http://") && !lower.contains("https://") && !lower.contains(".com") && !lower.contains(".org") && !lower.contains(".net") && !lower.contains(".io")
+    }
+
+    private func automationProcessSummary(_ prompt: String) -> String {
+        let compact = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "Yes, I'll get on \(compact) by turning it into a local workflow, routing it through the automation builder, and showing the editable node before anything runs."
     }
 }
