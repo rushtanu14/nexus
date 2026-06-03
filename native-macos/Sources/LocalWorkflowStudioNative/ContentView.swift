@@ -2605,11 +2605,11 @@ enum StudioType {
     static let button = FontStacks.body(size: 14).weight(.medium)
     static let code = FontStacks.technical(size: 11).weight(.regular)
 
-    static let echoTitle = pageTitle
-    static let echoCardTitle = cardTitle
-    static let echoBody = body
-    static let echoSecondary = secondary
-    static let echoMetadata = metadata
+    static let echoTitle = FontStacks.echo(size: 32).weight(.bold)
+    static let echoCardTitle = FontStacks.echo(size: 18).weight(.semibold)
+    static let echoBody = FontStacks.echo(size: 14).weight(.regular)
+    static let echoSecondary = FontStacks.echo(size: 12).weight(.regular)
+    static let echoMetadata = FontStacks.echo(size: 11).weight(.medium)
 }
 
 private enum FontStacks {
@@ -2636,6 +2636,13 @@ private enum FontStacks {
         "Berkeley Mono",
         "Menlo"
     ]
+    private static let echoNames = [
+        "Instrument Serif",
+        "InstrumentSerif-Regular",
+        "InstrumentSerif",
+        "NewYork",
+        "NewYork-Regular"
+    ]
 
     private static let registerBundledFonts: Void = {
         for ext in ["ttf", "otf"] {
@@ -2657,6 +2664,10 @@ private enum FontStacks {
 
     static func technical(size: CGFloat) -> Font {
         resolvedFont(names: technicalNames, size: size, fallback: .system(size: size, design: .monospaced))
+    }
+
+    static func echo(size: CGFloat) -> Font {
+        resolvedFont(names: echoNames, size: size, fallback: .system(size: size, design: .serif))
     }
 
     private static func resolvedFont(names: [String], size: CGFloat, fallback: Font) -> Font {
