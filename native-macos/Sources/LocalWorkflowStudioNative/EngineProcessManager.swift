@@ -60,7 +60,7 @@ final class EngineProcessManager {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
-        process.arguments = ["-f", "Nexus.app/Contents/Resources/engine/src/server.js|nexus/native-macos/dist/Nexus.app/Contents/Resources/engine/src/server.js"]
+        process.arguments = ["-f", "src/server.js"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try? process.run()
