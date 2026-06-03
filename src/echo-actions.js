@@ -28,6 +28,39 @@ const PROVIDERS = {
   }
 };
 
+const ATTENDEE_STOP_WORDS = new Set([
+  "Action",
+  "Agenda",
+  "Client",
+  "Decision",
+  "Discussion",
+  "Draft",
+  "Echo",
+  "Friday",
+  "Follow",
+  "Meeting",
+  "Monday",
+  "Nex",
+  "Next",
+  "Notes",
+  "Objective",
+  "Owner",
+  "Participants",
+  "Please",
+  "Product",
+  "Saturday",
+  "Sunday",
+  "Sync",
+  "Thursday",
+  "Tuesday",
+  "Untitled",
+  "Wednesday",
+  "Weekly",
+  "Yeah",
+  "You",
+  "Your"
+]);
+
 export function buildEchoActions({ transcript = "", notes = "", title = "Echo notes", memory = "" } = {}) {
   const context = normalizeText([title, notes, transcript, memory].filter(Boolean).join("\n\n"));
   if (!context) return [];
@@ -236,17 +269,22 @@ function subjectFor(title, fallback) {
 }
 
 function inferAttendees(context) {
-  const names = [...context.matchAll(/\b[A-Z][a-z]{2,}\b/g)]
+  const ownerNames = [...context.matchAll(/\bOwner:\s*([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){0,2})/g)]
+    .flatMap((match) => match[1].split(/\s+/));
+  const spokenNames = [...context.matchAll(/\b[A-Z][a-z]{2,}\b/g)]
     .map((match) => match[0])
-    .filter((name) => !["Meeting", "Notes", "Follow", "Objective", "Decision", "Action", "Discussion", "Nex", "Echo", "Untitled", "Yeah", "You", "Your", "Please"].includes(name));
+    .filter((name) => !ATTENDEE_STOP_WORDS.has(name));
+  const names = [...ownerNames, ...spokenNames].filter((name) => !ATTENDEE_STOP_WORDS.has(name));
   return [...new Set(names)].slice(0, 5).join(", ") || "Infer from meeting participants and memory";
 }
 
 function inferWhen(context) {
   const lower = context.toLowerCase();
   if (lower.includes("tomorrow")) return "tomorrow";
-  const nextWeek = context.match(/next\s+\w+/i);
+  const nextWeek = context.match(/\bnext\s+(week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
   if (nextWeek) return nextWeek[0];
+  const weekday = context.match(/\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
+  if (weekday) return weekday[0];
   return "Infer from meeting context";
 }
 

@@ -319,6 +319,36 @@ test("api: echo actions build multi-step invite workflow from natural speech", a
   }
 });
 
+test("api: echo actions build invite workflows without screenshot-specific wording", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/echo/actions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Product sync",
+        transcript: "Maya wants us to meet again on Friday. Draft the invite and follow up with the decisions from the call.",
+        notes: "Next step: schedule follow up. Owner: Maya."
+      })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    const workflow = payload.actions.find((action) => action.kind === "meeting_followup_workflow");
+    assert(workflow, "expected a multi-step MCP workflow");
+    const calendarStep = workflow.mcp.steps.find((step) => step.server === "google-workspace");
+    const emailStep = workflow.mcp.steps.find((step) => step.server === "gmail");
+    assert(calendarStep, "expected a Google Workspace calendar step");
+    assert(emailStep, "expected a Gmail draft step");
+    assert.equal(calendarStep.inputs.when_hint, "Friday");
+    assert.equal(calendarStep.inputs.attendees_hint, "Maya");
+    assert.equal(emailStep.inputs.to_hint, "Maya");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("api: echo action run reports missing MCP registration", async () => {
   const server = createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
