@@ -251,6 +251,61 @@ test("api: life plan endpoint returns suggested automations", async () => {
   }
 });
 
+test("api: echo actions infer MCP follow-ups from meeting context", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/echo/actions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Weekly customer sync",
+        transcript: "We need to send a follow-up email, notify the Slack channel, create Notion tasks, write a recap doc, and schedule the next meeting.",
+        notes: ""
+      })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert(payload.actions.some((action) => action.provider === "Gmail" && action.mcp.tool === "draft_email"));
+    assert(payload.actions.some((action) => action.provider === "Slack"));
+    assert(payload.actions.some((action) => action.provider === "Notion"));
+    assert(payload.actions.some((action) => action.provider === "Google Drive"));
+    assert(payload.actions.some((action) => action.provider === "Google Workspace"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("api: echo action run reports missing MCP registration", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const action = {
+      id: crypto.randomUUID(),
+      kind: "email_follow_up",
+      provider: "Gmail",
+      title: "Draft follow-up email",
+      summary: "Prepare email",
+      confidence: 0.8,
+      status: "suggested",
+      mcp: { server: "gmail", tool: "draft_email", inputs: { body: "hello" } }
+    };
+    const response = await fetch(`http://127.0.0.1:${port}/echo/action/run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.status, "needs_mcp");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("api: Nex completion uses and updates local memory", async () => {
   const qdrant = await startFakeQdrant();
   let receivedMessages = [];

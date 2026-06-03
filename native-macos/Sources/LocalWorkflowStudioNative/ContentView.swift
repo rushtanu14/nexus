@@ -55,7 +55,7 @@ struct ContentView: View {
                     Sidebar(model: model, compact: compact, selectedSection: $selectedSection)
                     switch selectedSection {
                     case .hub:
-                        NexusHubSurface(model: model) {
+                        NexusHubSurface(model: model, echoStore: echoStore) {
                             selectedSection = .workflows
                         }
                     case .brain:
@@ -491,6 +491,7 @@ private struct Sidebar: View {
 
 private struct NexusHubSurface: View {
     @Bindable var model: StudioModel
+    @Bindable var echoStore: EchoStore
     var openBuilder: () -> Void
 
     var body: some View {
@@ -512,6 +513,12 @@ private struct NexusHubSurface: View {
                         }
                         Button("build workflow", action: openBuilder)
                             .buttonStyle(PrimaryButtonStyle())
+                    }
+
+                    if let echo = echoStore.selectedSession {
+                        HubEchoCard(session: echo) {
+                            echoStore.requestDashboard()
+                        }
                     }
 
                     if model.savedWorkflows.isEmpty {
@@ -573,6 +580,56 @@ private struct HubWorkflowCard: View {
                 Text(saved.workflow.groupedSchedule.isEmpty ? "Independent node timing" : "Grouped: \(saved.workflow.groupedSchedule)")
                     .font(.system(size: 11).weight(.medium))
                     .foregroundStyle(StudioPalette.accentBright)
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+        .contentShape(Rectangle())
+        .onTapGesture(perform: open)
+    }
+}
+
+private struct HubEchoCard: View {
+    var session: EchoSession
+    var open: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Current Echo", systemImage: "waveform")
+                    .font(StudioType.cardTitle)
+                Spacer()
+                Text("\(session.actions.count) MCP")
+                    .font(StudioType.metadata)
+                    .foregroundStyle(StudioPalette.accentBright)
+            }
+            Text(session.name)
+                .font(StudioType.body.weight(.medium))
+                .lineLimit(1)
+            Text((session.notes.isEmpty ? session.transcript : session.notes).isEmpty ? "Recording context will appear here." : (session.notes.isEmpty ? session.transcript : session.notes))
+                .font(StudioType.secondary)
+                .foregroundStyle(StudioPalette.muted)
+                .lineLimit(3)
+            if !session.actions.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(session.actions.prefix(4)) { action in
+                        HStack {
+                            Text(action.provider)
+                                .font(StudioType.metadata)
+                                .foregroundStyle(StudioPalette.accentBright)
+                            Text(action.title)
+                                .font(StudioType.secondary.weight(.medium))
+                                .lineLimit(1)
+                            Spacer()
+                            Text(action.status)
+                                .font(StudioType.metadata)
+                                .foregroundStyle(StudioPalette.muted)
+                        }
+                    }
+                }
+            }
         }
         .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -722,6 +779,7 @@ private struct NexEchoSurface: View {
                             .padding(14)
                             .background(StudioPalette.panel)
                         }
+                        EchoMCPActionPanel(store: store)
                         Text(store.status)
                             .font(StudioType.echoSecondary)
                             .foregroundStyle(StudioPalette.muted)
@@ -734,6 +792,90 @@ private struct NexEchoSurface: View {
 
     private static func duration(_ seconds: TimeInterval) -> String {
         String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+@MainActor
+private struct EchoMCPActionPanel: View {
+    @Bindable var store: EchoStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("MCP ACTIONS")
+                    .font(StudioType.echoMetadata)
+                    .tracking(1.2)
+                    .foregroundStyle(StudioPalette.muted)
+                Spacer()
+                Button {
+                    Task { await store.buildMCPActions() }
+                } label: {
+                    Label("build actions", systemImage: "wand.and.sparkles")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+
+            let actions = store.selectedSession?.actions ?? []
+            if actions.isEmpty {
+                Text("Nex will infer Gmail, Workspace, Slack, and Notion actions from the transcript and polished notes.")
+                    .font(StudioType.echoSecondary)
+                    .foregroundStyle(StudioPalette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(StudioPalette.panelStrong)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], spacing: 10) {
+                    ForEach(actions) { action in
+                        EchoMCPActionCard(action: action) {
+                            store.runAction(action)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(StudioPalette.panel)
+    }
+}
+
+private struct EchoMCPActionCard: View {
+    var action: EchoMCPAction
+    var run: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text(action.provider)
+                    .font(StudioType.echoMetadata)
+                    .foregroundStyle(StudioPalette.accentBright)
+                Spacer()
+                Text(action.status)
+                    .font(StudioType.echoMetadata)
+                    .foregroundStyle(StudioPalette.muted)
+            }
+            Text(action.title)
+                .font(StudioType.echoBody.weight(.semibold))
+                .lineLimit(2)
+            Text(action.summary)
+                .font(StudioType.echoSecondary)
+                .foregroundStyle(StudioPalette.muted)
+                .lineLimit(3)
+            HStack {
+                Text("\(action.mcp.server) / \(action.mcp.tool)")
+                    .font(StudioType.code)
+                    .foregroundStyle(StudioPalette.code)
+                    .lineLimit(1)
+                Spacer()
+                Button("prepare", action: run)
+                    .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudioPalette.panelStrong)
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
     }
 }
 

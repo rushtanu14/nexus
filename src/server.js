@@ -2,6 +2,7 @@ import http from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import express from "express";
+import { buildEchoActions, runEchoAction } from "./echo-actions.js";
 import { executeNode } from "./executor.js";
 import { generateNode, OLLAMA_BASE_URL, OLLAMA_MODEL } from "./generator.js";
 import { createLifePlan } from "./life-assistant.js";
@@ -73,6 +74,36 @@ export function createApp() {
       tags: ["life-plan", "workflow"]
     });
     response.json({ ...plan, memory_context: memory.memories, memory_status: memory.status });
+  }));
+  app.post("/echo/actions", asyncRoute(async (request, response) => {
+    const transcript = request.body.transcript ?? "";
+    const notes = request.body.notes ?? "";
+    const title = request.body.title ?? "Echo notes";
+    const project = request.body.project ?? "nexus";
+    const text = [title, notes, transcript].filter(Boolean).join("\n\n");
+    const memory = await optionalMemoryContext(text, { project, source: "echo/actions" });
+    const actions = buildEchoActions({ transcript, notes, title, memory: memory.context });
+    await optionalRemember({
+      memory_type: "automation",
+      content: `Built ${actions.length} Echo MCP action suggestion(s) for "${title}".`,
+      source: "echo/actions",
+      importance: actions.length > 0 ? 0.5 : 0.25,
+      project,
+      tags: ["echo", "mcp", "automation"]
+    });
+    response.json({ actions, memory_status: memory.status });
+  }));
+  app.post("/echo/action/run", asyncRoute(async (request, response) => {
+    const result = runEchoAction(request.body.action, { registeredServers: await listServers() });
+    await optionalRemember({
+      memory_type: "automation",
+      content: `Echo MCP action "${request.body.action?.title ?? "unknown"}" status: ${result.status}.`,
+      source: "echo/action/run",
+      importance: 0.35,
+      project: request.body.project ?? "nexus",
+      tags: ["echo", "mcp", "action-run"]
+    });
+    response.json(result);
   }));
   app.get("/memory/health", asyncRoute(async (_request, response) => {
     response.json(await createMemoryStore().health());

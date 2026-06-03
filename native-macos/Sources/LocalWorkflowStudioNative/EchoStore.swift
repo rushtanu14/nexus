@@ -12,6 +12,60 @@ struct EchoSession: Identifiable, Codable, Equatable {
     var duration: TimeInterval
     var transcript: String
     var notes: String
+    var actions: [EchoMCPAction]
+
+    init(id: UUID, name: String, createdAt: Date, duration: TimeInterval, transcript: String, notes: String, actions: [EchoMCPAction] = []) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.duration = duration
+        self.transcript = transcript
+        self.notes = notes
+        self.actions = actions
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, createdAt, duration, transcript, notes, actions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        duration = try container.decode(TimeInterval.self, forKey: .duration)
+        transcript = try container.decode(String.self, forKey: .transcript)
+        notes = try container.decode(String.self, forKey: .notes)
+        actions = try container.decodeIfPresent([EchoMCPAction].self, forKey: .actions) ?? []
+    }
+}
+
+struct EchoMCPAction: Identifiable, Codable, Equatable {
+    var id: UUID
+    var kind: String
+    var provider: String
+    var title: String
+    var summary: String
+    var confidence: Double
+    var status: String
+    var mcp: EchoMCPCall
+}
+
+struct EchoMCPCall: Codable, Equatable {
+    var server: String
+    var tool: String
+    var inputs: [String: String]
+}
+
+private struct EchoActionResponse: Decodable {
+    var actions: [EchoMCPAction]
+    var memory_status: String?
+}
+
+private struct EchoActionRunResponse: Decodable {
+    var ok: Bool
+    var status: String
+    var message: String
 }
 
 @MainActor
@@ -393,17 +447,74 @@ final class EchoStore {
 
     func polishNotes(using model: StudioModel) {
         guard let sessionID = selectedID, let index = selectedIndex else { return }
-        let source = sessions[index].notes.isEmpty ? sessions[index].transcript : sessions[index].notes
+        saveLiveTranscriptIfNeeded()
+        let source = bestPolishSource(for: sessions[index])
         guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         status = "Nex is polishing notes"
         Task {
             do {
-                let polished = try await model.completeWithNex("Polish these meeting notes. Preserve factual content, use clear headings and concise bullets:\n\n\(source)")
+                let polished = try await model.completeWithNex("Polish these meeting notes. Use the transcript if the notes are sparse. Preserve factual content, use clear headings and concise bullets, and infer concrete action items without asking for pasted notes:\n\n\(source)")
                 guard let currentIndex = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
                 sessions[currentIndex].notes = polished
                 status = "Notes polished"
                 persist()
+                await buildMCPActions()
             } catch {
+                status = error.localizedDescription
+            }
+        }
+    }
+
+    func buildMCPActions() async {
+        guard let index = selectedIndex else { return }
+        saveLiveTranscriptIfNeeded()
+        let session = sessions[index]
+        let source = bestPolishSource(for: session)
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            status = "No Echo context for MCP actions yet"
+            return
+        }
+        status = "Nex is building MCP actions"
+        do {
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:3131/echo/actions")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+            request.httpBody = try JSONEncoder().encode([
+                "title": session.name,
+                "transcript": session.transcript.isEmpty ? transcriber.transcript : session.transcript,
+                "notes": source,
+                "project": "nexus"
+            ])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw NSError(domain: "NexusEcho", code: 1, userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "Could not build Echo MCP actions"])
+            }
+            let decoded = try JSONDecoder().decode(EchoActionResponse.self, from: data)
+            guard let currentIndex = selectedIndex else { return }
+            sessions[currentIndex].actions = decoded.actions
+            status = decoded.actions.isEmpty ? "No MCP actions inferred yet" : "MCP actions ready"
+            persist()
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    func runAction(_ action: EchoMCPAction) {
+        Task {
+            do {
+                var request = URLRequest(url: URL(string: "http://127.0.0.1:3131/echo/action/run")!)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "content-type")
+                request.httpBody = try JSONEncoder().encode(["action": action])
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                    throw NSError(domain: "NexusEcho", code: 1, userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "Could not prepare MCP action"])
+                }
+                let decoded = try JSONDecoder().decode(EchoActionRunResponse.self, from: data)
+                updateAction(action.id, status: decoded.status)
+                status = decoded.message
+            } catch {
+                updateAction(action.id, status: "failed")
                 status = error.localizedDescription
             }
         }
@@ -422,6 +533,36 @@ final class EchoStore {
             sessions[index].duration += Date().timeIntervalSince(recordingStartedAt)
             self.recordingStartedAt = nil
         }
+        persist()
+    }
+
+    private func saveLiveTranscriptIfNeeded() {
+        let live = transcriber.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !live.isEmpty, let index = selectedIndex else { return }
+        sessions[index].transcript = live
+        if sessions[index].notes.isEmpty { sessions[index].notes = live }
+        persist()
+    }
+
+    private func bestPolishSource(for session: EchoSession) -> String {
+        let liveTranscript = transcriber.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let transcript = session.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notes = session.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !liveTranscript.isEmpty, notesIsPlaceholder(notes) || notes.count < 40 { return liveTranscript }
+        if !notes.isEmpty, !notesIsPlaceholder(notes) { return notes }
+        if !transcript.isEmpty { return transcript }
+        return liveTranscript
+    }
+
+    private func notesIsPlaceholder(_ notes: String) -> Bool {
+        let lower = notes.lowercased()
+        return lower.contains("please paste the meeting notes") || lower.contains("ready to polish them")
+    }
+
+    private func updateAction(_ id: UUID, status: String) {
+        guard let sessionIndex = selectedIndex,
+              let actionIndex = sessions[sessionIndex].actions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[sessionIndex].actions[actionIndex].status = status
         persist()
     }
 
