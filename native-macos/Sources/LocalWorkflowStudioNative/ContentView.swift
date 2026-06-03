@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ApplicationServices
+import CoreText
 import LocalWorkflowStudioCore
 
 @MainActor
@@ -470,7 +471,7 @@ private struct Sidebar: View {
                             .foregroundStyle(StudioPalette.muted)
                         Text("~/Workflow Studio")
                             .foregroundStyle(StudioPalette.accent)
-                            .font(.system(size: 11, design: .monospaced).monospaced())
+                            .font(StudioType.code)
                     }
                     .font(.system(size: 12).weight(.medium))
                     .padding(12)
@@ -1170,7 +1171,7 @@ private struct CodeSurface: View {
                             }
 
                             Text(model.workflow.rawScript)
-                                .font(.system(size: 13, design: .monospaced).monospaced())
+                                .font(StudioType.code)
                                 .foregroundStyle(StudioPalette.code)
                                 .padding(16)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1235,7 +1236,7 @@ private struct RunsSurface: View {
                                         .font(.system(size: 12).weight(.bold))
                                         .foregroundStyle(statusColor(log.status))
                                     Text(log.time, style: .time)
-                                        .font(.system(size: 11, design: .monospaced).monospaced())
+                                        .font(StudioType.code)
                                         .foregroundStyle(StudioPalette.muted)
                                 }
                                 .frame(width: 96, alignment: .leading)
@@ -1301,7 +1302,7 @@ private struct NodesSurface: View {
                                         .font(.system(size: 12))
                                         .foregroundStyle(StudioPalette.muted)
                                     Text(node.runner.steps.map(\.primitive).joined(separator: "  ->  "))
-                                        .font(.system(size: 11, design: .monospaced).monospaced())
+                                        .font(StudioType.code)
                                         .foregroundStyle(StudioPalette.code)
                                         .lineLimit(2)
                                 }
@@ -1470,7 +1471,7 @@ private struct InspectorPanel: View {
 
                             InspectorSection(title: "Raw Script") {
                                 Text(model.workflow.rawScript)
-                                    .font(.system(size: 11, design: .monospaced).monospaced())
+                                    .font(StudioType.code)
                                     .foregroundStyle(StudioPalette.code)
                                     .padding(12)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1597,7 +1598,7 @@ private struct LogDrawer: View {
                     VStack(spacing: 6) {
                         if model.logs.isEmpty {
                             Text("No local runs yet.")
-                                .font(.system(size: 11, design: .monospaced).monospaced())
+                                .font(StudioType.code)
                                 .foregroundStyle(StudioPalette.muted)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
@@ -1612,7 +1613,7 @@ private struct LogDrawer: View {
                                     Text(log.message)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
-                                .font(.system(size: 11, design: .monospaced).monospaced())
+                                .font(StudioType.code)
                             }
                         }
                     }
@@ -2297,11 +2298,11 @@ private struct ImpactRow: View {
                 .font(.system(size: 10).weight(.bold))
                 .foregroundStyle(StudioPalette.accentBright)
             Text(item.source)
-                .font(.system(size: 11, design: .monospaced).monospaced())
+                .font(StudioType.code)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Text(item.destination)
-                .font(.system(size: 11, design: .monospaced).monospaced())
+                .font(StudioType.code)
                 .foregroundStyle(StudioPalette.muted)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -2594,64 +2595,72 @@ private struct FloatingAnimatedNexPet: View {
 }
 
 enum StudioType {
-    static let brandWordmark = FontStacks.main(size: 14).weight(.bold)
-    static let pageTitle = FontStacks.main(size: 32).weight(.bold)
-    static let sectionTitle = FontStacks.main(size: 24).weight(.semibold)
-    static let cardTitle = FontStacks.main(size: 18).weight(.semibold)
-    static let body = FontStacks.main(size: 14).weight(.regular)
-    static let secondary = FontStacks.main(size: 12).weight(.regular)
-    static let metadata = FontStacks.main(size: 11).weight(.medium)
-    static let button = FontStacks.main(size: 14).weight(.medium)
-    static let code = FontStacks.mono(size: 11).weight(.regular)
+    static let brandWordmark = FontStacks.title(size: 14).weight(.bold)
+    static let pageTitle = FontStacks.title(size: 32).weight(.bold)
+    static let sectionTitle = FontStacks.title(size: 24).weight(.semibold)
+    static let cardTitle = FontStacks.title(size: 18).weight(.semibold)
+    static let body = FontStacks.body(size: 14).weight(.regular)
+    static let secondary = FontStacks.body(size: 12).weight(.regular)
+    static let metadata = FontStacks.body(size: 11).weight(.medium)
+    static let button = FontStacks.body(size: 14).weight(.medium)
+    static let code = FontStacks.technical(size: 11).weight(.regular)
 
-    static let echoTitle = FontStacks.echo(size: 32).weight(.bold)
-    static let echoCardTitle = FontStacks.echo(size: 18).weight(.semibold)
-    static let echoBody = FontStacks.echo(size: 14).weight(.regular)
-    static let echoSecondary = FontStacks.echo(size: 12).weight(.regular)
-    static let echoMetadata = FontStacks.echo(size: 11).weight(.medium)
+    static let echoTitle = pageTitle
+    static let echoCardTitle = cardTitle
+    static let echoBody = body
+    static let echoSecondary = secondary
+    static let echoMetadata = metadata
 }
 
 private enum FontStacks {
-    private static let mainNames = [
+    private static let titleNames = [
+        "Geist",
+        "Geist-Regular",
+        "Geist-SemiBold",
+        "Geist-Bold"
+    ]
+    private static let bodyNames = [
+        "TestSohne-Buch",
+        "TestSohne-Halbfett",
+        "TestSohne-Fett",
         "Sohne",
         "Söhne",
         "Sohne-Regular",
-        "Söhne-Regular",
-        "Geist",
-        "Geist-Regular",
-        "Instrument Serif",
-        "InstrumentSerif-Regular"
+        "Söhne-Regular"
     ]
-    private static let echoNames = [
-        "Instrument Serif",
-        "InstrumentSerif-Regular",
-        "InstrumentSerif",
-        "Sohne",
-        "Söhne",
-        "Geist"
-    ]
-    private static let monoNames = [
+    private static let technicalNames = [
+        "Ioskeley-Mono",
+        "Ioskeley-Mono-Semibold",
+        "Ioskeley-Mono-Bold",
+        "IoskeleyMono-Regular",
         "Berkeley Mono",
-        "BerkeleyMono-Regular",
-        "BerkeleyMono",
-        "Geist Mono",
-        "GeistMono-Regular",
         "Menlo"
     ]
 
-    static func main(size: CGFloat) -> Font {
-        resolvedFont(names: mainNames, size: size, fallback: .system(size: size))
+    private static let registerBundledFonts: Void = {
+        for ext in ["ttf", "otf"] {
+            let rootFonts = Bundle.module.urls(forResourcesWithExtension: ext, subdirectory: nil) ?? []
+            let nestedFonts = Bundle.module.urls(forResourcesWithExtension: ext, subdirectory: "Fonts") ?? []
+            for url in rootFonts + nestedFonts {
+                CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+            }
+        }
+    }()
+
+    static func title(size: CGFloat) -> Font {
+        resolvedFont(names: titleNames, size: size, fallback: .system(size: size))
     }
 
-    static func echo(size: CGFloat) -> Font {
-        resolvedFont(names: echoNames, size: size, fallback: .system(size: size, design: .serif))
+    static func body(size: CGFloat) -> Font {
+        resolvedFont(names: bodyNames, size: size, fallback: .system(size: size))
     }
 
-    static func mono(size: CGFloat) -> Font {
-        resolvedFont(names: monoNames, size: size, fallback: .system(size: size, design: .monospaced))
+    static func technical(size: CGFloat) -> Font {
+        resolvedFont(names: technicalNames, size: size, fallback: .system(size: size, design: .monospaced))
     }
 
     private static func resolvedFont(names: [String], size: CGFloat, fallback: Font) -> Font {
+        _ = registerBundledFonts
         if let installed = names.first(where: { NSFont(name: $0, size: size) != nil }) {
             return .custom(installed, fixedSize: size)
         }

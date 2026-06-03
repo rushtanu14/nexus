@@ -63,7 +63,7 @@ struct LocalWorkflowStudioNativeApp: App {
                 Button("Talk to Nex") {
                     nexVoice.startListening(using: model)
                 }
-                .keyboardShortcut(.space, modifiers: [.command, .shift])
+                .keyboardShortcut(.space, modifiers: [.shift])
             }
         }
     }

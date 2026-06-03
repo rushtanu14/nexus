@@ -207,11 +207,18 @@ final class SpeechTranscriber {
 final class NexSpeechOutput {
     static let shared = NexSpeechOutput()
     private let synthesizer = AVSpeechSynthesizer()
+    private var currentSound: NSSound?
 
     func speak(_ text: String) {
-        synthesizer.stopSpeaking(at: .immediate)
+        stop()
         if speakWithPiper(text) { return }
         synthesizer.speak(AVSpeechUtterance(string: text))
+    }
+
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+        currentSound?.stop()
+        currentSound = nil
     }
 
     private func speakWithPiper(_ text: String) -> Bool {
@@ -233,7 +240,8 @@ final class NexSpeechOutput {
             pipe.fileHandleForWriting.closeFile()
             process.waitUntilExit()
             guard process.terminationStatus == 0 else { return false }
-            NSSound(contentsOf: output, byReference: false)?.play()
+            currentSound = NSSound(contentsOf: output, byReference: false)
+            currentSound?.play()
             return true
         } catch {
             return false
@@ -437,6 +445,7 @@ final class NexVoiceStore {
         if transcriber.isRecording {
             transcriber.stop()
         } else {
+            NexSpeechOutput.shared.stop()
             transcriber.start(autoStopAfterSilence: true, onFinal: { [weak self] transcript in
                 guard !transcript.isEmpty else { return }
                 self?.response = "Thinking..."
@@ -460,6 +469,7 @@ final class NexVoiceStore {
 
     func startListening(using model: StudioModel) {
         isVisible = true
+        NexSpeechOutput.shared.stop()
         if !transcriber.isRecording { toggle(using: model) }
     }
 
