@@ -862,7 +862,7 @@ private struct EchoMCPActionCard: View {
                 .foregroundStyle(StudioPalette.muted)
                 .lineLimit(3)
             HStack {
-                Text("\(action.mcp.server) / \(action.mcp.tool)")
+                Text(action.mcp.steps?.isEmpty == false ? "\(action.mcp.steps?.count ?? 0) MCP steps" : "\(action.mcp.server) / \(action.mcp.tool)")
                     .font(StudioType.code)
                     .foregroundStyle(StudioPalette.code)
                     .lineLimit(1)

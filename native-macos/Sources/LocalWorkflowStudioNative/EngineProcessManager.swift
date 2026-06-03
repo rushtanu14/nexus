@@ -12,7 +12,8 @@ final class EngineProcessManager {
             if !(await isReachable(URL(string: "http://127.0.0.1:11434/api/tags")!)) {
                 startOllama()
             }
-            if !(await isReachable(URL(string: "http://127.0.0.1:3131/health")!)) {
+            if !(await isEngineCompatible()) {
+                stopExistingEngine()
                 startEngine()
             }
         }
@@ -53,6 +54,20 @@ final class EngineProcessManager {
         engineProcess = process
     }
 
+    private func stopExistingEngine() {
+        engineProcess?.terminate()
+        engineProcess = nil
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        process.arguments = ["-f", "Nexus.app/Contents/Resources/engine/src/server.js|nexus/native-macos/dist/Nexus.app/Contents/Resources/engine/src/server.js"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+        Thread.sleep(forTimeInterval: 0.25)
+    }
+
     private func engineRoot() -> URL? {
         let fileManager = FileManager.default
         if let configured = ProcessInfo.processInfo.environment["NEXUS_ENGINE_ROOT"] {
@@ -83,5 +98,16 @@ final class EngineProcessManager {
         var request = URLRequest(url: url)
         request.timeoutInterval = 0.5
         return (try? await URLSession.shared.data(for: request)) != nil
+    }
+
+    private func isEngineCompatible() async -> Bool {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:3131/health")!)
+        request.timeoutInterval = 0.5
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let features = payload["features"] as? [String: Any] else {
+            return false
+        }
+        return features["echoActions"] as? Bool == true
     }
 }

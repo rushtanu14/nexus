@@ -55,6 +55,13 @@ struct EchoMCPCall: Codable, Equatable {
     var server: String
     var tool: String
     var inputs: [String: String]
+    var steps: [EchoMCPStep]?
+}
+
+struct EchoMCPStep: Codable, Equatable {
+    var server: String
+    var tool: String
+    var inputs: [String: String]
 }
 
 private struct EchoActionResponse: Decodable {

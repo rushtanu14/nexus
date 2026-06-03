@@ -174,6 +174,21 @@ test("api: generated nodes are returned from the local server", async () => {
   }
 });
 
+test("api: health advertises echo action compatibility", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`);
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.features.echoActions, true);
+    assert.equal(payload.features.echoMCPWorkflows, true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("life: pasted meeting notes produce a command plan", () => {
   const plan = createLifePlan(`Meeting title: Class officer planning
 Date: 2026-06-01
@@ -272,6 +287,33 @@ test("api: echo actions infer MCP follow-ups from meeting context", async () => 
     assert(payload.actions.some((action) => action.provider === "Notion"));
     assert(payload.actions.some((action) => action.provider === "Google Drive"));
     assert(payload.actions.some((action) => action.provider === "Google Workspace"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("api: echo actions build multi-step invite workflow from natural speech", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/echo/actions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Untitled Echo",
+        transcript: "Yeah Stephen so I was thinking tomorrow why don't we sync up again. You just shoot me over an invite and we'll figure it out from there.",
+        notes: "Meeting Notes: Follow-up Discussion"
+      })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    const workflow = payload.actions.find((action) => action.kind === "meeting_followup_workflow");
+    assert(workflow, "expected a multi-step MCP workflow");
+    assert.equal(workflow.provider, "MCP Workflow");
+    assert.equal(workflow.mcp.steps.length, 2);
+    assert(workflow.mcp.steps.some((step) => step.server === "google-workspace" && step.tool === "create_calendar_event"));
+    assert(workflow.mcp.steps.some((step) => step.server === "gmail" && step.tool === "draft_email"));
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

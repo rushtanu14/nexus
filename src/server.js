@@ -17,7 +17,16 @@ export function createApp() {
   app.use(express.json({ limit: process.env.NEXUS_JSON_LIMIT ?? "2mb" }));
 
   app.get("/health", asyncRoute(async (_request, response) => {
-    response.json({ ok: true, ollama: await ollamaStatus(), model: OLLAMA_MODEL, qdrant: await memoryStatus() });
+    response.json({
+      ok: true,
+      ollama: await ollamaStatus(),
+      model: OLLAMA_MODEL,
+      qdrant: await memoryStatus(),
+      features: {
+        echoActions: true,
+        echoMCPWorkflows: true
+      }
+    });
   }));
   app.post("/node/generate", asyncRoute(async (request, response) => {
     const intent = request.body.intent;

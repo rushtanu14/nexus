@@ -33,7 +33,43 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
   if (!context) return [];
 
   const actions = [];
-  if (mentions(context, ["follow up", "follow-up", "email", "send"]) || mentions(context, ["client", "customer", "candidate"])) {
+  const wantsInvite = mentions(context, ["invite", "calendar invite", "send me over an invite", "shoot me over an invite", "meeting invite"]);
+  const wantsFollowUpMeeting = mentions(context, ["sync up", "sync-up", "meet again", "follow up", "follow-up", "tomorrow", "next meeting"]);
+  const wantsEmail = mentions(context, ["follow up", "follow-up", "email", "send", "shoot me", "invite"]) || mentions(context, ["client", "customer", "candidate"]);
+  const wantsCalendar = wantsInvite || wantsFollowUpMeeting || mentions(context, ["schedule", "calendar", "meeting", "call", "next week"]);
+
+  const hasFollowUpWorkflow = wantsInvite && wantsEmail;
+  if (hasFollowUpWorkflow) {
+    actions.push(workflowAction({
+      kind: "meeting_followup_workflow",
+      title: "Create invite and follow-up workflow",
+      summary: "Prepare a Google Calendar invite and Gmail follow-up from the meeting context.",
+      confidence: confidence(context, ["invite", "sync up", "tomorrow", "send", "follow up"]) + 0.1,
+      calls: [
+        {
+          provider: PROVIDERS.workspace,
+          payload: {
+            title: subjectFor(title, "Follow-up sync"),
+            attendees_hint: inferAttendees(context),
+            when_hint: inferWhen(context),
+            agenda: inferredTasks(context).join("\n"),
+            context
+          }
+        },
+        {
+          provider: PROVIDERS.gmail,
+          payload: {
+            subject: subjectFor(title, "Follow-up sync"),
+            to_hint: inferAttendees(context),
+            body: followUpBody(context),
+            context
+          }
+        }
+      ]
+    }));
+  }
+
+  if (wantsEmail && !hasFollowUpWorkflow) {
     actions.push(action({
       kind: "email_follow_up",
       provider: PROVIDERS.gmail,
@@ -42,6 +78,7 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
       confidence: confidence(context, ["follow up", "email", "send", "client", "customer"]),
       payload: {
         subject: subjectFor(title, "Follow-up"),
+        to_hint: inferAttendees(context),
         body: followUpBody(context),
         context
       }
@@ -93,7 +130,7 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
     }));
   }
 
-  if (mentions(context, ["schedule", "calendar", "meeting", "call", "next week", "tomorrow", "follow-up meeting"])) {
+  if (wantsCalendar && !hasFollowUpWorkflow) {
     actions.push(action({
       kind: "calendar_follow_up",
       provider: PROVIDERS.workspace,
@@ -102,7 +139,8 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
       confidence: confidence(context, ["schedule", "calendar", "meeting", "call", "next week"]),
       payload: {
         title: subjectFor(title, "Follow-up meeting"),
-        attendees_hint: "Infer from known meeting participants and memory",
+        attendees_hint: inferAttendees(context),
+        when_hint: inferWhen(context),
         agenda: inferredTasks(context).join("\n"),
         context
       }
@@ -115,20 +153,20 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
 }
 
 export function runEchoAction(action, { registeredServers = {} } = {}) {
-  const server = action?.mcp?.server;
-  const registered = server ? registeredServers[server] : undefined;
-  if (!registered) {
+  const calls = action?.mcp?.steps?.length ? action.mcp.steps : [action?.mcp].filter(Boolean);
+  const missing = calls.filter((call) => !registeredServers[call.server]).map((call) => call.server);
+  if (missing.length > 0) {
     return {
       ok: false,
       status: "needs_mcp",
-      message: `${action?.provider ?? "MCP"} action is ready, but the ${server} MCP server is not registered yet.`,
+      message: `${action?.provider ?? "MCP"} action is ready, but these MCP servers are not registered yet: ${[...new Set(missing)].join(", ")}.`,
       action
     };
   }
   return {
     ok: true,
     status: "ready_to_run",
-    message: `Prepared ${action.title} for ${registered}.`,
+    message: `Prepared ${action.title} with ${calls.length} MCP step(s).`,
     action
   };
 }
@@ -146,6 +184,32 @@ function action({ kind, provider, title, summary, confidence, payload }) {
       server: provider.server,
       tool: provider.tool,
       inputs: payload
+    }
+  };
+}
+
+function workflowAction({ kind, title, summary, confidence, calls }) {
+  const steps = calls.map(({ provider, payload }) => ({
+    server: provider.server,
+    tool: provider.tool,
+    inputs: payload
+  }));
+  return {
+    id: crypto.randomUUID(),
+    kind,
+    provider: "MCP Workflow",
+    title,
+    summary,
+    confidence: Math.min(0.98, confidence),
+    status: "suggested",
+    mcp: {
+      server: "workflow",
+      tool: "multi_step",
+      inputs: {
+        summary,
+        step_count: String(steps.length)
+      },
+      steps
     }
   };
 }
@@ -169,6 +233,21 @@ function subjectFor(title, fallback) {
   const clean = normalizeText(title);
   if (!clean || clean === "Untitled Echo") return fallback;
   return `${fallback}: ${clean}`;
+}
+
+function inferAttendees(context) {
+  const names = [...context.matchAll(/\b[A-Z][a-z]{2,}\b/g)]
+    .map((match) => match[0])
+    .filter((name) => !["Meeting", "Notes", "Follow", "Objective", "Decision", "Action", "Discussion", "Nex", "Echo", "Untitled", "Yeah", "You", "Your", "Please"].includes(name));
+  return [...new Set(names)].slice(0, 5).join(", ") || "Infer from meeting participants and memory";
+}
+
+function inferWhen(context) {
+  const lower = context.toLowerCase();
+  if (lower.includes("tomorrow")) return "tomorrow";
+  const nextWeek = context.match(/next\s+\w+/i);
+  if (nextWeek) return nextWeek[0];
+  return "Infer from meeting context";
 }
 
 function followUpBody(context) {
