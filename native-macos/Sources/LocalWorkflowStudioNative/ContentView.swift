@@ -733,6 +733,8 @@ private struct NexEchoSurface: View {
                                 .onSubmit { store.renameSelected(store.sessionName) }
                             Button("save name") { store.renameSelected(store.sessionName) }
                                 .buttonStyle(SecondaryButtonStyle())
+                            Button("add transcript note") { store.makeNoteFromTranscript() }
+                                .buttonStyle(SecondaryButtonStyle())
                             Button(role: .destructive) {
                                 store.deleteSelected()
                             } label: {
@@ -779,6 +781,7 @@ private struct NexEchoSurface: View {
                             .padding(14)
                             .background(StudioPalette.panel)
                         }
+                        NexAssistantPanel(store: store)
                         EchoMCPActionPanel(store: store)
                         Text(store.status)
                             .font(StudioType.echoSecondary)
@@ -788,10 +791,41 @@ private struct NexEchoSurface: View {
                 .padding(24)
             }
         }
+        .onAppear { store.startDashboardPolling() }
     }
 
     private static func duration(_ seconds: TimeInterval) -> String {
         String(format: "%02d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+@MainActor
+private struct NexAssistantPanel: View {
+    @Bindable var store: EchoStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("NEX ASSISTANT")
+                .font(StudioType.echoMetadata)
+                .tracking(1.2)
+                .foregroundStyle(StudioPalette.muted)
+            HStack {
+                TextField("Change, split, cancel, or add context to pending Echo actions", text: $store.assistantMessage)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { store.sendAssistantMessage() }
+                Button {
+                    store.sendAssistantMessage()
+                } label: {
+                    Label("send", systemImage: "paperplane.fill")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+            Text(store.assistantStatus)
+                .font(StudioType.echoSecondary)
+                .foregroundStyle(StudioPalette.muted)
+        }
+        .padding(14)
+        .background(StudioPalette.panel)
     }
 }
 
@@ -802,7 +836,7 @@ private struct EchoMCPActionPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("MCP ACTIONS")
+                Text("LIVE ACTION FEED")
                     .font(StudioType.echoMetadata)
                     .tracking(1.2)
                     .foregroundStyle(StudioPalette.muted)
@@ -817,7 +851,7 @@ private struct EchoMCPActionPanel: View {
 
             let actions = store.selectedSession?.actions ?? []
             if actions.isEmpty {
-                Text("Nex will infer Gmail, Workspace, Slack, and Notion actions from the transcript and polished notes.")
+                Text("Nex will infer Gmail, Calendar, and Notion actions from live speech, pasted notes, and assistant edits.")
                     .font(StudioType.echoSecondary)
                     .foregroundStyle(StudioPalette.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -828,7 +862,9 @@ private struct EchoMCPActionPanel: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], spacing: 10) {
                     ForEach(actions) { action in
                         EchoMCPActionCard(action: action) {
-                            store.runAction(action)
+                            store.dispatchAction(action)
+                        } cancel: {
+                            store.cancelAction(action)
                         }
                     }
                 }
@@ -842,11 +878,12 @@ private struct EchoMCPActionPanel: View {
 private struct EchoMCPActionCard: View {
     var action: EchoMCPAction
     var run: () -> Void
+    var cancel: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text(action.provider)
+                Text(action.pet?.uppercased() ?? action.provider)
                     .font(StudioType.echoMetadata)
                     .foregroundStyle(StudioPalette.accentBright)
                 Spacer()
@@ -861,14 +898,41 @@ private struct EchoMCPActionCard: View {
                 .font(StudioType.echoSecondary)
                 .foregroundStyle(StudioPalette.muted)
                 .lineLimit(3)
+            if let progress = action.progress, !progress.isEmpty {
+                Text(progress)
+                    .font(StudioType.echoSecondary)
+                    .foregroundStyle(StudioPalette.accentBright)
+            }
+            if let error = action.error, !error.isEmpty {
+                Text(error)
+                    .font(StudioType.echoSecondary)
+                    .foregroundStyle(StudioPalette.amber)
+                    .lineLimit(2)
+            }
+            if let quote = action.source_quote, !quote.isEmpty {
+                DisclosureGroup {
+                    Text(quote)
+                        .font(StudioType.echoSecondary)
+                        .foregroundStyle(StudioPalette.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 4)
+                } label: {
+                    Text("source quote")
+                        .font(StudioType.echoMetadata)
+                }
+            }
             HStack {
                 Text(action.mcp.steps?.isEmpty == false ? "\(action.mcp.steps?.count ?? 0) MCP steps" : "\(action.mcp.server) / \(action.mcp.tool)")
                     .font(StudioType.code)
                     .foregroundStyle(StudioPalette.code)
                     .lineLimit(1)
                 Spacer()
-                Button("prepare", action: run)
+                Button(action.status == "running" ? "running" : "dispatch", action: run)
                     .buttonStyle(SecondaryButtonStyle())
+                    .disabled(action.status == "running")
+                Button("cancel", action: cancel)
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(action.status == "done" || action.status == "canceled")
             }
         }
         .padding(12)
