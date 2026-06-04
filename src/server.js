@@ -414,8 +414,9 @@ function asyncRoute(handler) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT ?? 3131);
-  createServer().listen(port, "127.0.0.1", () => {
-    console.log(`Nexus workflow engine listening on http://127.0.0.1:${port}`);
+  const host = process.env.HOST ?? "127.0.0.1";
+  createServer().listen(port, host, () => {
+    console.log(`Nexus workflow engine listening on http://${host}:${port}`);
     ensureMemoryOnLaunch();
   });
 }

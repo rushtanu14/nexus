@@ -1,0 +1,9 @@
+.git
+.nexus-data
+node_modules
+qdrant_storage
+native-macos/.build
+native-macos/dist
+native-macos/AppBundle/Resources/engine/node_modules
+mcp-folders
+*.zip

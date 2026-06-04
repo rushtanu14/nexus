@@ -65,34 +65,59 @@ into your autonomous personal assistant
 
 ## ◈ quickstart
 
-**1 — install deps**
+**start Nexus**
 
 ```bash
-npm install
+docker compose up -d --build && ./run.sh
 ```
 
-**2 — launch**
+this starts the Nexus engine API, Ollama, the default chat model, the embedding model, Qdrant memory, then opens the macOS app.
+
+just start the backend stack:
 
 ```bash
-./run.sh
+docker compose up -d --build
 ```
 
-> builds the native app bundle and opens it. that's it.
-
----
-
-## ◈ engine
-
-the engine starts automatically inside the app. for standalone engine development:
-
-```bash
-npm start
-```
-
-confirm it's alive:
+the app connects to the Docker stack on localhost. confirm the stack is alive:
 
 ```
 GET http://127.0.0.1:3131/health
+```
+
+stop everything:
+
+```bash
+docker compose down
+```
+
+---
+
+## ◈ docker stack
+
+`docker compose up -d --build` handles the local services that used to be started one by one:
+
+| service | local URL | purpose |
+|---|---|---|
+| `engine` | `http://127.0.0.1:3131` | Nexus API, Echo actions, MCP registry, assistant completion |
+| `ollama` | `http://127.0.0.1:11434` | local model runtime |
+| `ollama-models` | — | pulls `qwen2.5-coder:7b` and `nomic-embed-text` once |
+| `qdrant` | `http://127.0.0.1:6333/dashboard` | semantic memory |
+
+stored data lives in Docker volumes: `nexus_engine_data`, `ollama_models`, and `qdrant_storage`.
+
+use a different model without editing files:
+
+```bash
+OLLAMA_MODEL=qwen2.5-coder:1.5b docker compose up -d --build
+```
+
+real Gmail, Notion, Drive, and other MCP calls still require their MCP server/auth connection. Once the stack is running, register an authenticated MCP endpoint from the app or through:
+
+```bash
+curl -X POST http://127.0.0.1:3131/mcp/register \
+  -H 'content-type: application/json' \
+  -d '{"app":"gmail","url":"http://127.0.0.1:9001"}'
 ```
 
 ### api surface
@@ -109,62 +134,15 @@ GET   /memory/health      →  vector memory status
 
 ---
 
-## ◈ local ai
-
-nexus runs on **ollama** by default — fully offline, no keys, no calls home.
-
-```bash
-npm run model:serve    # start ollama
-npm run model:pull     # pull default models
-```
-
-`model:pull` fetches:
-
-```
-qwen2.5-coder:1.5b   →  lightweight planner
-nomic-embed-text     →  semantic embeddings
-```
-
-the engine default is `qwen2.5-coder:7b`. pull it for full power:
-
-```bash
-ollama pull qwen2.5-coder:7b
-```
-
-running on a lighter machine? dial it back:
-
-```bash
-OLLAMA_MODEL=qwen2.5-coder:1.5b npm start
-```
-
-> switch between **ollama**, **lm studio**, and **openai-compatible** providers live inside the app via the nex brain view — no restart needed.
-
----
-
-## ◈ memory
-
-semantic memory is opt-in. when enabled, nexus stores and retrieves local workflow context via **qdrant** — a self-hosted vector db.
-
-```bash
-npm run memory:pull     # pull qdrant image
-npm run memory:start    # spin it up
-```
-
-dashboard lives at:
-
-```
-http://127.0.0.1:6333/dashboard
-```
-
-storage path: `./qdrant_storage`
-
-```bash
-npm run memory:stop     # shut it down
-```
-
----
-
 ## ◈ development
+
+backend stack:
+
+```bash
+npm run docker:start
+npm run docker:logs
+npm run docker:stop
+```
 
 **node runtime tests**
 ```bash
