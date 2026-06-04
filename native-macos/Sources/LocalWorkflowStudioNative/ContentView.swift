@@ -646,6 +646,8 @@ private struct NexEchoSurface: View {
     @Bindable var model: StudioModel
     @Bindable var store: EchoStore
     @State private var isEditingNotes = false
+    @State private var actionFeedHeight = 320.0
+    @State private var actionCardWidth = 300.0
 
     var body: some View {
         ReactiveBackgroundContainer(color: StudioPalette.canvas) {
@@ -781,8 +783,9 @@ private struct NexEchoSurface: View {
                             .padding(14)
                             .background(StudioPalette.panel)
                         }
+                        .frame(minHeight: 260, idealHeight: 360, maxHeight: .infinity)
                         NexAssistantPanel(store: store)
-                        EchoMCPActionPanel(store: store)
+                        EchoMCPActionPanel(store: store, feedHeight: $actionFeedHeight, cardWidth: $actionCardWidth)
                         Text(store.status)
                             .font(StudioType.echoSecondary)
                             .foregroundStyle(StudioPalette.muted)
@@ -832,6 +835,8 @@ private struct NexAssistantPanel: View {
 @MainActor
 private struct EchoMCPActionPanel: View {
     @Bindable var store: EchoStore
+    @Binding var feedHeight: Double
+    @Binding var cardWidth: Double
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -848,6 +853,24 @@ private struct EchoMCPActionPanel: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
             }
+            HStack(spacing: 10) {
+                Text("height")
+                    .font(StudioType.echoMetadata)
+                    .foregroundStyle(StudioPalette.muted)
+                Slider(value: $feedHeight, in: 180...520, step: 20)
+                    .frame(width: 150)
+                Text("zoom")
+                    .font(StudioType.echoMetadata)
+                    .foregroundStyle(StudioPalette.muted)
+                Picker("zoom", selection: $cardWidth) {
+                    Text("compact").tag(240.0)
+                    Text("normal").tag(300.0)
+                    Text("wide").tag(380.0)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                Spacer()
+            }
 
             let actions = store.selectedSession?.actions ?? []
             if actions.isEmpty {
@@ -860,15 +883,19 @@ private struct EchoMCPActionPanel: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
             } else {
                 EchoPetAgentStrip(actions: actions)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], spacing: 10) {
-                    ForEach(actions) { action in
-                        EchoMCPActionCard(action: action) {
-                            store.dispatchAction(action)
-                        } cancel: {
-                            store.cancelAction(action)
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth), spacing: 10)], spacing: 10) {
+                        ForEach(actions) { action in
+                            EchoMCPActionCard(action: action) {
+                                store.dispatchAction(action)
+                            } cancel: {
+                                store.cancelAction(action)
+                            }
                         }
                     }
+                    .padding(.trailing, 6)
                 }
+                .frame(height: feedHeight)
             }
         }
         .padding(14)
