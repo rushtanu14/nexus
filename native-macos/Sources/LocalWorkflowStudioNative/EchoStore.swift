@@ -107,6 +107,7 @@ struct EchoMCPStep: Codable, Equatable {
 private struct EchoActionResponse: Decodable {
     var actions: [EchoMCPAction]
     var memory_status: String?
+    var snapshot: EchoDashboardResponse?
 }
 
 private struct EchoDashboardResponse: Decodable {
@@ -643,6 +644,7 @@ final class EchoStore {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "content-type")
             request.httpBody = try JSONEncoder().encode([
+                "sessionId": session.id.uuidString,
                 "title": session.name,
                 "transcript": session.transcript.isEmpty ? transcriber.transcript : session.transcript,
                 "notes": source,
@@ -654,7 +656,7 @@ final class EchoStore {
             }
             let decoded = try JSONDecoder().decode(EchoActionResponse.self, from: data)
             guard let currentIndex = selectedIndex else { return }
-            sessions[currentIndex].actions = decoded.actions
+            sessions[currentIndex].actions = decoded.snapshot?.actions ?? decoded.actions
             status = decoded.actions.isEmpty ? "No MCP actions inferred yet" : "MCP actions ready"
             persist()
         } catch {
@@ -836,10 +838,10 @@ final class NexVoiceStore {
         }
     }
 
-    func startListening(using model: StudioModel) {
+    func startListening(using model: StudioModel, echoStore: EchoStore? = nil) {
         isVisible = true
         NexSpeechOutput.shared.stop()
-        if !transcriber.isRecording { toggle(using: model) }
+        if !transcriber.isRecording { toggle(using: model, echoStore: echoStore) }
     }
 
     private func route(_ prompt: String, using model: StudioModel, echoStore: EchoStore?) -> String? {

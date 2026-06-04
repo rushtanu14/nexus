@@ -110,6 +110,7 @@ export function normalizeAction(action) {
   const sourceQuote = String(action.source_quote ?? action.sourceQuote ?? action.summary ?? "").trim();
   return {
     id: action.id ?? crypto.randomUUID(),
+    kind: action.kind,
     type: action.type ?? "mcp_action",
     sessionId: action.sessionId ?? DEFAULT_SESSION,
     tool,

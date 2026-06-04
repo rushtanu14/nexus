@@ -1,5 +1,6 @@
 import http from "node:http";
 import { execFile } from "node:child_process";
+import fs from "node:fs";
 import { promisify } from "node:util";
 import express from "express";
 import { NexAssistant } from "./assistant/NexAssistant.js";
@@ -96,6 +97,7 @@ export function createApp() {
     response.json({ ...plan, memory_context: memory.memories, memory_status: memory.status });
   }));
   app.post("/echo/actions", asyncRoute(async (request, response) => {
+    const sessionId = request.body.sessionId ?? "default";
     const transcript = request.body.transcript ?? "";
     const notes = request.body.notes ?? "";
     const title = request.body.title ?? "Echo notes";
@@ -111,7 +113,8 @@ export function createApp() {
       project,
       tags: ["echo", "mcp", "automation"]
     });
-    response.json({ actions, memory_status: memory.status });
+    for (const action of actions) actionStore.upsertAction({ ...action, status: action.status ?? "pending" }, { sessionId });
+    response.json({ actions, memory_status: memory.status, snapshot: actionStore.snapshot(sessionId) });
   }));
   app.post("/echo/chunk", asyncRoute(async (request, response) => {
     const sessionId = request.body.sessionId ?? "default";
@@ -330,13 +333,61 @@ async function prepareBrain(brain) {
     return `Prepared ${model} with Ollama`;
   }
   if (provider === "lmstudio") {
-    const executable = process.env.NEXUS_LMS_PATH || `${process.env.HOME}/.lmstudio/bin/lms`;
-    await execFileAsync(executable, ["server", "start"]);
-    await execFileAsync(executable, ["get", model, "--yes"], { timeout: Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000) });
-    await execFileAsync(executable, ["load", model, "--yes"], { timeout: Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000) });
+    const executable = lmStudioExecutable();
+    const baseUrl = String(brain.baseUrl || "http://127.0.0.1:1234/v1").replace(/\/$/, "");
+    if (!(await isOpenAICompatibleReachable(baseUrl))) {
+      await runLms(executable, ["server", "start"]);
+      await waitForOpenAICompatible(baseUrl, Number(process.env.NEXUS_LMSTUDIO_START_TIMEOUT_MS ?? 8000));
+    }
+    if (process.env.NEXUS_LMSTUDIO_PULL === "1") {
+      await runLms(executable, ["get", model, "--yes"], { timeout: Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000) });
+    }
+    await runLms(executable, ["load", model, "--yes"], { timeout: Number(process.env.NEXUS_LMSTUDIO_LOAD_TIMEOUT_MS ?? 120000) });
     return `Prepared ${model} with LM Studio`;
   }
   return "OpenAI-compatible providers do not require local preparation";
+}
+
+function lmStudioExecutable() {
+  const configured = process.env.NEXUS_LMS_PATH;
+  const home = process.env.HOME;
+  const candidates = [
+    configured,
+    `${home}/.lmstudio/bin/lms`,
+    "/opt/homebrew/bin/lms",
+    "/usr/local/bin/lms"
+  ].filter(Boolean);
+  return candidates.find((candidate) => {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }) ?? "lms";
+}
+
+async function runLms(executable, args, options = {}) {
+  if (executable === "lms") return execFileAsync("/usr/bin/env", ["lms", ...args], options);
+  return execFileAsync(executable, args, options);
+}
+
+async function waitForOpenAICompatible(baseUrl, timeoutMs) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await isOpenAICompatibleReachable(baseUrl)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return false;
+}
+
+async function isOpenAICompatibleReachable(baseUrl) {
+  try {
+    const response = await fetch(`${baseUrl}/models`, { signal: AbortSignal.timeout(500) });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 function ollamaBaseUrl(configuredBaseUrl) {
