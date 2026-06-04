@@ -49,6 +49,46 @@ struct EchoMCPAction: Identifiable, Codable, Equatable {
     var confidence: Double
     var status: String
     var mcp: EchoMCPCall
+    var pet: String?
+    var source_quote: String?
+    var progress: String?
+    var error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, type, provider, title, summary, confidence, status, mcp, pet, source_quote, progress, error
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? container.decodeIfPresent(String.self, forKey: .type) ?? "mcp_action"
+        provider = try container.decodeIfPresent(String.self, forKey: .provider) ?? "MCP"
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "MCP action"
+        summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "pending"
+        mcp = try container.decode(EchoMCPCall.self, forKey: .mcp)
+        pet = try container.decodeIfPresent(String.self, forKey: .pet)
+        source_quote = try container.decodeIfPresent(String.self, forKey: .source_quote)
+        progress = try container.decodeIfPresent(String.self, forKey: .progress)
+        error = try container.decodeIfPresent(String.self, forKey: .error)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(title, forKey: .title)
+        try container.encode(summary, forKey: .summary)
+        try container.encode(confidence, forKey: .confidence)
+        try container.encode(status, forKey: .status)
+        try container.encode(mcp, forKey: .mcp)
+        try container.encodeIfPresent(pet, forKey: .pet)
+        try container.encodeIfPresent(source_quote, forKey: .source_quote)
+        try container.encodeIfPresent(progress, forKey: .progress)
+        try container.encodeIfPresent(error, forKey: .error)
+    }
 }
 
 struct EchoMCPCall: Codable, Equatable {
@@ -69,6 +109,38 @@ private struct EchoActionResponse: Decodable {
     var memory_status: String?
 }
 
+private struct EchoDashboardResponse: Decodable {
+    var sessionId: String
+    var actions: [EchoMCPAction]
+}
+
+private struct EchoAssistantResponse: Decodable {
+    var ok: Bool
+    var snapshot: EchoDashboardResponse?
+}
+
+private struct EchoChunkRequest: Encodable {
+    var sessionId: String
+    var text: String
+    var title: String
+    var notes: String
+}
+
+private struct EchoAssistantRequest: Encodable {
+    var sessionId: String
+    var message: String
+}
+
+private struct EchoActionDispatchRequest: Encodable {
+    var sessionId: String
+    var action: EchoMCPAction
+}
+
+private struct EchoActionCancelRequest: Encodable {
+    var sessionId: String
+    var actionId: UUID
+}
+
 private struct EchoActionRunResponse: Decodable {
     var ok: Bool
     var status: String
@@ -87,6 +159,7 @@ final class SpeechTranscriber {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var finalHandler: ((String) -> Void)?
+    private var chunkHandler: ((String) -> Void)?
     private var startHandler: (() -> Void)?
     private var failureHandler: ((String) -> Void)?
     private var hasInputTap = false
@@ -95,11 +168,12 @@ final class SpeechTranscriber {
     private var recordingStartedAt: Date?
     private var lastVoiceHeardAt: Date?
 
-    func start(autoStopAfterSilence: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
+    func start(autoStopAfterSilence: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onChunk: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
         guard !isRecording else { return }
         shouldAutoStopAfterSilence = autoStopAfterSilence
         startHandler = onStart
         failureHandler = onFailure
+        chunkHandler = onChunk
         finalHandler = onFinal
         status = "Requesting permissions"
         Task {
@@ -161,6 +235,7 @@ final class SpeechTranscriber {
         startHandler = nil
         failureHandler = nil
         finalHandler = nil
+        chunkHandler = nil
     }
 
     private func requestPermissions() async -> Bool {
@@ -179,6 +254,7 @@ final class SpeechTranscriber {
             return false
         }
         transcript = ""
+        var lastPartial = ""
         task?.cancel()
         task = nil
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -214,7 +290,11 @@ final class SpeechTranscriber {
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor in
                 if let result {
-                    self?.transcript = result.bestTranscription.formattedString
+                    let nextTranscript = result.bestTranscription.formattedString
+                    let chunk = Self.newChunk(from: lastPartial, to: nextTranscript)
+                    lastPartial = nextTranscript
+                    self?.transcript = nextTranscript
+                    if !chunk.isEmpty { self?.chunkHandler?(chunk) }
                     if result.isFinal, self?.shouldAutoStopAfterSilence == false { self?.stop() }
                 } else if let error {
                     self?.status = error.localizedDescription
@@ -261,6 +341,16 @@ final class SpeechTranscriber {
         }
         let rms = sqrt(sum / Float(frameCount))
         return 20 * log10(max(rms, 0.000_001))
+    }
+
+    private static func newChunk(from previous: String, to next: String) -> String {
+        let cleanNext = next.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanPrevious = previous.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanNext.isEmpty, cleanNext.count > cleanPrevious.count else { return "" }
+        if cleanNext.hasPrefix(cleanPrevious) {
+            return String(cleanNext.dropFirst(cleanPrevious.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return cleanNext
     }
 }
 
@@ -326,10 +416,13 @@ final class EchoStore {
     var selectedID: UUID?
     var sessionName = ""
     var status = "Ready"
+    var assistantMessage = ""
+    var assistantStatus = "Assistant ready"
     var dashboardRequest = 0
     let transcriber = SpeechTranscriber()
     private var recordingStartedAt: Date?
     private let defaultsKey = "NexusEchoSessions"
+    private var dashboardPollingTask: Task<Void, Never>?
 
     init() {
         sessions = []
@@ -363,6 +456,7 @@ final class EchoStore {
     func select(_ session: EchoSession) {
         selectedID = session.id
         sessionName = session.name
+        refreshDashboardOnce()
     }
 
     func renameSelected(_ name: String) {
@@ -403,6 +497,8 @@ final class EchoStore {
 
     func startRecording() {
         if selectedSession == nil { createEcho() }
+        guard let selectedID else { return }
+        startDashboardPolling()
         status = "Requesting microphone"
         transcriber.start(
             onStart: { [weak self] in
@@ -412,6 +508,9 @@ final class EchoStore {
             onFailure: { [weak self] message in
                 self?.recordingStartedAt = nil
                 self?.status = message
+            },
+            onChunk: { [weak self] chunk in
+                self?.sendLiveTranscriptChunk(sessionID: selectedID, text: chunk)
             },
             onFinal: { [weak self] transcript in
                 self?.saveTranscript(transcript)
@@ -429,6 +528,63 @@ final class EchoStore {
         transcriber.stop()
         saveTranscript(transcriber.transcript)
         status = "Paused"
+    }
+
+    func startDashboardPolling() {
+        guard dashboardPollingTask == nil else { return }
+        dashboardPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshDashboard()
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    func stopDashboardPolling() {
+        dashboardPollingTask?.cancel()
+        dashboardPollingTask = nil
+    }
+
+    func refreshDashboardOnce() {
+        Task { await refreshDashboard() }
+    }
+
+    func sendAssistantMessage() {
+        let message = assistantMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty, let selectedID else { return }
+        assistantMessage = ""
+        assistantStatus = "Assistant updating queue"
+        Task {
+            do {
+                var request = URLRequest(url: URL(string: "http://127.0.0.1:3131/echo/assistant")!)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "content-type")
+                request.httpBody = try JSONEncoder().encode(EchoAssistantRequest(sessionId: selectedID.uuidString, message: message))
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                    throw NSError(domain: "NexusEcho", code: 1, userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "Assistant could not update Echo"])
+                }
+                let decoded = try JSONDecoder().decode(EchoAssistantResponse.self, from: data)
+                if let actions = decoded.snapshot?.actions {
+                    replaceActions(actions, for: selectedID)
+                }
+                assistantStatus = decoded.ok ? "Queue updated" : "Assistant response unavailable"
+            } catch {
+                assistantStatus = error.localizedDescription
+            }
+        }
+    }
+
+    func dispatchAction(_ action: EchoMCPAction) {
+        Task {
+            await postActionCommand("/echo/action/dispatch", actionID: action.id, action: action)
+        }
+    }
+
+    func cancelAction(_ action: EchoMCPAction) {
+        Task {
+            await postActionCommand("/echo/action/cancel", actionID: action.id, action: nil)
+        }
     }
 
     func makeNoteFromTranscript() {
@@ -525,6 +681,71 @@ final class EchoStore {
                 status = error.localizedDescription
             }
         }
+    }
+
+    private func sendLiveTranscriptChunk(sessionID: UUID, text: String) {
+        let chunk = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !chunk.isEmpty else { return }
+        let title = selectedSession?.name ?? "Echo meeting"
+        let notes = selectedSession?.notes ?? ""
+        Task {
+            do {
+                var request = URLRequest(url: URL(string: "http://127.0.0.1:3131/echo/chunk")!)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "content-type")
+                request.httpBody = try JSONEncoder().encode(EchoChunkRequest(sessionId: sessionID.uuidString, text: chunk, title: title, notes: notes))
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                    throw NSError(domain: "NexusEcho", code: 1, userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "Could not stream Echo chunk"])
+                }
+                let decoded = try JSONDecoder().decode(EchoAssistantResponse.self, from: data)
+                if let actions = decoded.snapshot?.actions { replaceActions(actions, for: sessionID) }
+            } catch {
+                status = "Live inference unavailable"
+            }
+        }
+    }
+
+    private func refreshDashboard() async {
+        guard let selectedID,
+              let url = URL(string: "http://127.0.0.1:3131/echo/dashboard?sessionId=\(selectedID.uuidString)") else { return }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return }
+            let decoded = try JSONDecoder().decode(EchoDashboardResponse.self, from: data)
+            replaceActions(decoded.actions, for: selectedID)
+        } catch {
+            // The engine may still be starting. Recording must continue regardless.
+        }
+    }
+
+    private func postActionCommand(_ path: String, actionID: UUID, action: EchoMCPAction?) async {
+        guard let selectedID else { return }
+        do {
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:3131\(path)")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "content-type")
+            if let action {
+                request.httpBody = try JSONEncoder().encode(EchoActionDispatchRequest(sessionId: selectedID.uuidString, action: action))
+            } else {
+                request.httpBody = try JSONEncoder().encode(EchoActionCancelRequest(sessionId: selectedID.uuidString, actionId: actionID))
+            }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                throw NSError(domain: "NexusEcho", code: 1, userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "Could not update action"])
+            }
+            let decoded = try JSONDecoder().decode(EchoAssistantResponse.self, from: data)
+            if let actions = decoded.snapshot?.actions { replaceActions(actions, for: selectedID) }
+            status = "Dashboard updated"
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    private func replaceActions(_ actions: [EchoMCPAction], for sessionID: UUID) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        sessions[index].actions = actions
+        persist()
     }
 
     private var selectedIndex: Int? {
