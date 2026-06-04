@@ -475,7 +475,6 @@ final class EchoStore {
     func startRecording() {
         if selectedSession == nil { createEcho() }
         guard selectedID != nil else { return }
-        startDashboardPolling()
         status = "Requesting microphone"
         transcriber.start(
             onStart: { [weak self] in
@@ -696,7 +695,15 @@ final class EchoStore {
 
     private func replaceActions(_ actions: [EchoMCPAction], for sessionID: UUID) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-        sessions[index].actions = actions
+        if actions.isEmpty, !sessions[index].actions.isEmpty {
+            return
+        }
+        var merged = actions
+        let remoteIDs = Set(actions.map(\.id))
+        for local in sessions[index].actions where !remoteIDs.contains(local.id) {
+            merged.append(local)
+        }
+        sessions[index].actions = merged
         persist()
     }
 

@@ -821,7 +821,6 @@ private struct NexEchoSurface: View {
                 }
             }
         }
-        .onAppear { store.startDashboardPolling() }
     }
 
     private static func duration(_ seconds: TimeInterval) -> String {
