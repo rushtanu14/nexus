@@ -58,8 +58,8 @@ export class PetSpawner extends EventEmitter {
 }
 
 async function runGenericPet(action, { progress }) {
-  progress?.("prepared generic MCP call");
-  return { ok: true, message: `Prepared ${action.tool}`, params: action.params };
+  progress?.("checking MCP authentication");
+  throw new Error(`No pet package or authenticated MCP runner is configured for ${action.tool}.`);
 }
 
 function petForTool(tool) {
