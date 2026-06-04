@@ -121,7 +121,7 @@ private struct TitleBar: View {
 
     var body: some View {
         ZStack {
-            PanelBackdrop(imageName: "TitleBarBackground", scrimOpacity: 0.55, scaleY: 0.65)
+            PanelBackdrop(imageName: "TitleBarBackground", scrimOpacity: 0.55, scaleY: 0.65, tint: StudioPalette.accent.opacity(0.08))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 12) {
@@ -422,7 +422,7 @@ private struct Sidebar: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PanelBackdrop(imageName: "LeftPanelBackground", scrimOpacity: 0.08)
+            PanelBackdrop(imageName: "LeftPanelBackground", scrimOpacity: 0.08, tint: StudioPalette.accentBright.opacity(0.06))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(alignment: .leading, spacing: compact ? 14 : 18) {
@@ -859,6 +859,7 @@ private struct EchoMCPActionPanel: View {
                     .background(StudioPalette.panelStrong)
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
             } else {
+                EchoPetAgentStrip(actions: actions)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 10)], spacing: 10) {
                     ForEach(actions) { action in
                         EchoMCPActionCard(action: action) {
@@ -871,7 +872,46 @@ private struct EchoMCPActionPanel: View {
             }
         }
         .padding(14)
-        .background(StudioPalette.panel)
+        .background(.ultraThinMaterial)
+        .overlay(liquidReflection(tint: StudioPalette.accent.opacity(0.08)))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+    }
+}
+
+private struct EchoPetAgentStrip: View {
+    var actions: [EchoMCPAction]
+
+    private var visibleActions: [EchoMCPAction] {
+        actions.filter { ["pending", "running"].contains($0.status) }.prefix(4).map { $0 }
+    }
+
+    var body: some View {
+        if !visibleActions.isEmpty {
+            HStack(spacing: 12) {
+                ForEach(visibleActions) { action in
+                    HStack(spacing: 8) {
+                        MiniNexPet(row: action.status == "running" ? 7 : 8, tint: mcpTint(for: action))
+                            .frame(width: 34, height: 38)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(action.petName.uppercased()) agent")
+                                .font(StudioType.echoMetadata)
+                                .foregroundStyle(StudioPalette.accentBright)
+                            Text(action.status)
+                                .font(StudioType.echoMetadata)
+                                .foregroundStyle(StudioPalette.muted)
+                        }
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 7)
+                    .background(.ultraThinMaterial)
+                    .overlay(liquidReflection(tint: mcpTint(for: action).opacity(0.16)))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(mcpTint(for: action).opacity(0.28)))
+                }
+                Spacer()
+            }
+        }
     }
 }
 
@@ -883,13 +923,24 @@ private struct EchoMCPActionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text(action.pet?.uppercased() ?? action.provider)
-                    .font(StudioType.echoMetadata)
-                    .foregroundStyle(StudioPalette.accentBright)
+                MCPIconView(name: action.logoName)
+                    .frame(width: 28, height: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(action.petName.uppercased())
+                        .font(StudioType.echoMetadata)
+                        .foregroundStyle(StudioPalette.accentBright)
+                    Text(action.provider)
+                        .font(StudioType.echoMetadata)
+                        .foregroundStyle(StudioPalette.muted)
+                }
                 Spacer()
                 Text(action.status)
                     .font(StudioType.echoMetadata)
                     .foregroundStyle(StudioPalette.muted)
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(mcpTint(for: action).opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             Text(action.title)
                 .font(StudioType.echoBody.weight(.semibold))
@@ -898,6 +949,18 @@ private struct EchoMCPActionCard: View {
                 .font(StudioType.echoSecondary)
                 .foregroundStyle(StudioPalette.muted)
                 .lineLimit(3)
+            if let steps = action.mcp.steps, !steps.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+                        MCPIconView(name: logoName(for: step))
+                            .frame(width: 24, height: 24)
+                    }
+                    Text("\(steps.count) MCPs")
+                        .font(StudioType.echoMetadata)
+                        .foregroundStyle(StudioPalette.muted)
+                    Spacer()
+                }
+            }
             if let progress = action.progress, !progress.isEmpty {
                 Text(progress)
                     .font(StudioType.echoSecondary)
@@ -920,6 +983,7 @@ private struct EchoMCPActionCard: View {
                     Text("source quote")
                         .font(StudioType.echoMetadata)
                 }
+                .tint(StudioPalette.accentBright)
             }
             HStack {
                 Text(action.mcp.steps?.isEmpty == false ? "\(action.mcp.steps?.count ?? 0) MCP steps" : "\(action.mcp.server) / \(action.mcp.tool)")
@@ -937,9 +1001,100 @@ private struct EchoMCPActionCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(StudioPalette.panelStrong)
-        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+        .background(.ultraThinMaterial)
+        .overlay(liquidReflection(tint: mcpTint(for: action).opacity(0.2)))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(mcpTint(for: action).opacity(0.25)))
+    }
+}
+
+private struct MCPIconView: View {
+    var name: String
+
+    var body: some View {
+        if let image = NSImage.mcpLogo(named: name) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .padding(4)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.18)))
+        } else {
+            Image(systemName: "app.connected.to.app.below.fill")
+                .font(.system(size: 16).weight(.semibold))
+                .foregroundStyle(StudioPalette.accentBright)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.ultraThinMaterial)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+}
+
+private struct MiniNexPet: View {
+    var row: Int
+    var tint: Color
+
+    var body: some View {
+        NexPetFrameView(col: 0, row: row, scale: 0.24)
+            .padding(2)
+            .background(tint.opacity(0.16))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.35)))
+    }
+}
+
+private extension EchoMCPAction {
+    var petName: String {
+        if let pet, !pet.isEmpty { return pet }
+        if mcp.tool.lowercased().contains("gmail") || provider.lowercased().contains("gmail") { return "gmail" }
+        if mcp.tool.lowercased().contains("notion") || provider.lowercased().contains("notion") { return "notion" }
+        if mcp.tool.lowercased().contains("calendar") || provider.lowercased().contains("calendar") || provider.lowercased().contains("workspace") { return "drive" }
+        return provider.lowercased().replacingOccurrences(of: " ", with: "-")
+    }
+
+    var logoName: String {
+        let lower = "\(petName) \(provider) \(mcp.server) \(mcp.tool)".lowercased()
+        if lower.contains("gmail") { return "gmail" }
+        if lower.contains("notion") { return "notion" }
+        if lower.contains("calendar") || lower.contains("workspace") || lower.contains("drive") { return "drive" }
+        return "drive"
+    }
+}
+
+private func mcpTint(for action: EchoMCPAction) -> Color {
+    switch action.logoName {
+    case "notion":
+        return Color(red: 0.96, green: 0.92, blue: 0.82)
+    case "gmail":
+        return Color(red: 0.96, green: 0.36, blue: 0.24)
+    case "drive":
+        return Color(red: 0.22, green: 0.72, blue: 0.64)
+    default:
+        return StudioPalette.accent
+    }
+}
+
+private func logoName(for step: EchoMCPStep) -> String {
+    let lower = "\(step.server) \(step.tool)".lowercased()
+    if lower.contains("gmail") { return "gmail" }
+    if lower.contains("notion") { return "notion" }
+    return "drive"
+}
+
+private func liquidReflection(tint: Color) -> some View {
+    ZStack {
+        LinearGradient(colors: [Color.white.opacity(0.18), tint, .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [.clear, Color.white.opacity(0.08), .clear], startPoint: .leading, endPoint: .trailing)
+            .blendMode(.screen)
+    }
+    .allowsHitTesting(false)
+}
+
+private extension NSImage {
+    static func mcpLogo(named name: String) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
     }
 }
 
@@ -1766,7 +1921,7 @@ private struct LogDrawer: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PanelBackdrop(imageName: "TerminalPanelBackground", scrimOpacity: 0.10, scaleY: 0.7, offsetY: -90)
+            PanelBackdrop(imageName: "TerminalPanelBackground", scrimOpacity: 0.10, scaleY: 0.7, offsetY: -90, tint: StudioPalette.amber.opacity(0.06))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1958,6 +2113,7 @@ private struct PanelBackdrop: View {
     var scale: CGFloat = 1.0
     var scaleY: CGFloat = 1.0
     var offsetY: CGFloat = 0.0
+    var tint: Color = .clear
 
     var body: some View {
         ZStack {
@@ -1967,6 +2123,7 @@ private struct PanelBackdrop: View {
                 scaleY: scaleY,
                 offsetY: offsetY
             )
+            LinearGradient(colors: [tint.opacity(0.15), tint.opacity(0.03), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
             Color.black.opacity(scrimOpacity)
         }
         .allowsHitTesting(false)
