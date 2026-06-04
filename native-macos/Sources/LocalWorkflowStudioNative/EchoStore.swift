@@ -148,6 +148,10 @@ private struct EchoActionRunResponse: Decodable {
     var message: String
 }
 
+private final class SpeechRequestBox {
+    var request: SFSpeechAudioBufferRecognitionRequest?
+}
+
 @MainActor
 @Observable
 final class SpeechTranscriber {
@@ -164,14 +168,19 @@ final class SpeechTranscriber {
     private var startHandler: (() -> Void)?
     private var failureHandler: ((String) -> Void)?
     private var hasInputTap = false
+    private let requestBox = SpeechRequestBox()
     private var silenceTask: Task<Void, Never>?
     private var shouldAutoStopAfterSilence = false
+    private var shouldRestartAfterFinal = false
     private var recordingStartedAt: Date?
     private var lastVoiceHeardAt: Date?
+    private var committedTranscript = ""
+    private var lastPartialTranscript = ""
 
-    func start(autoStopAfterSilence: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onChunk: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
+    func start(autoStopAfterSilence: Bool = false, continuous: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onChunk: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
         guard !isRecording else { return }
         shouldAutoStopAfterSilence = autoStopAfterSilence
+        shouldRestartAfterFinal = continuous
         startHandler = onStart
         failureHandler = onFailure
         chunkHandler = onChunk
@@ -204,7 +213,9 @@ final class SpeechTranscriber {
         task?.cancel()
         task = nil
         request = nil
+        requestBox.request = nil
         shouldAutoStopAfterSilence = false
+        shouldRestartAfterFinal = false
         recordingStartedAt = nil
         lastVoiceHeardAt = nil
         isRecording = false
@@ -224,7 +235,9 @@ final class SpeechTranscriber {
         task?.cancel()
         task = nil
         request = nil
+        requestBox.request = nil
         shouldAutoStopAfterSilence = false
+        shouldRestartAfterFinal = false
         recordingStartedAt = nil
         lastVoiceHeardAt = nil
         isRecording = false
@@ -255,17 +268,20 @@ final class SpeechTranscriber {
             return false
         }
         transcript = ""
-        var lastPartial = ""
+        committedTranscript = ""
+        lastPartialTranscript = ""
         task?.cancel()
         task = nil
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         self.request = request
+        requestBox.request = request
 
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
+        let requestBox = requestBox
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            request.append(buffer)
+            requestBox.request?.append(buffer)
             guard let level = Self.audioLevel(from: buffer), level > -42 else { return }
             Task { @MainActor in
                 guard self?.shouldAutoStopAfterSilence == true else { return }
@@ -288,22 +304,45 @@ final class SpeechTranscriber {
             return false
         }
 
+        startRecognitionTask(with: recognizer)
+        return true
+    }
+
+    private func startRecognitionTask(with recognizer: SFSpeechRecognizer, cancelExisting: Bool = true) {
+        if cancelExisting { task?.cancel() }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        self.request = request
+        requestBox.request = request
+        lastPartialTranscript = ""
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor in
+                guard let self else { return }
                 if let result {
                     let nextTranscript = result.bestTranscription.formattedString
-                    let chunk = Self.newChunk(from: lastPartial, to: nextTranscript)
-                    lastPartial = nextTranscript
-                    self?.transcript = nextTranscript
-                    if !chunk.isEmpty { self?.chunkHandler?(chunk) }
-                    if result.isFinal, self?.shouldAutoStopAfterSilence == false { self?.stop() }
+                    let chunk = Self.newChunk(from: self.lastPartialTranscript, to: nextTranscript)
+                    self.lastPartialTranscript = nextTranscript
+                    self.transcript = [self.committedTranscript, nextTranscript].filter { !$0.isEmpty }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !chunk.isEmpty { self.chunkHandler?(chunk) }
+                    if result.isFinal {
+                        self.committedTranscript = self.transcript
+                        self.lastPartialTranscript = ""
+                        if self.shouldRestartAfterFinal, self.isRecording, !self.shouldAutoStopAfterSilence {
+                            self.startRecognitionTask(with: recognizer, cancelExisting: false)
+                        } else if self.shouldAutoStopAfterSilence == false {
+                            self.stop()
+                        }
+                    }
                 } else if let error {
-                    self?.status = error.localizedDescription
-                    self?.stop()
+                    self.status = error.localizedDescription
+                    if self.shouldRestartAfterFinal, self.isRecording {
+                        self.startRecognitionTask(with: recognizer)
+                    } else {
+                        self.stop()
+                    }
                 }
             }
         }
-        return true
     }
 
     private func startSilenceMonitorIfNeeded() {
@@ -502,6 +541,7 @@ final class EchoStore {
         startDashboardPolling()
         status = "Requesting microphone"
         transcriber.start(
+            continuous: true,
             onStart: { [weak self] in
                 self?.recordingStartedAt = Date()
                 self?.status = "Recording"

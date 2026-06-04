@@ -541,6 +541,7 @@ private struct NexusHubSurface: View {
             }
         }
         .frame(minWidth: 760)
+        .onAppear { echoStore.startDashboardPolling() }
     }
 }
 
@@ -613,6 +614,29 @@ private struct HubEchoCard: View {
                 .foregroundStyle(StudioPalette.muted)
                 .lineLimit(3)
             if !session.actions.isEmpty {
+                let activeAgents = session.actions.filter { ["pending", "running"].contains($0.status) }
+                if !activeAgents.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(activeAgents.prefix(4)) { action in
+                            HStack(spacing: 6) {
+                                AgentPetFrameView(petName: action.petName, col: 0, row: action.status == "running" ? 7 : 8, scale: 0.16)
+                                    .frame(width: 28, height: 30)
+                                Text(action.petName.uppercased())
+                                    .font(StudioType.metadata)
+                                    .lineLimit(1)
+                                Text(action.status)
+                                    .font(StudioType.metadata)
+                                    .foregroundStyle(StudioPalette.muted)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(mcpGlassBackground(tint: mcpTint(for: action), wireframe: false))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(mcpTint(for: action).opacity(0.45)).allowsHitTesting(false))
+                        }
+                        Spacer()
+                    }
+                }
                 VStack(spacing: 8) {
                     ForEach(session.actions.prefix(4)) { action in
                         HStack {
