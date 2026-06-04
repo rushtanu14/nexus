@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 @MainActor
 final class EngineProcessManager {
@@ -6,10 +7,14 @@ final class EngineProcessManager {
 
     private var engineProcess: Process?
     private var ollamaProcess: Process?
+    private var lmStudioProcess: Process?
 
     func startIfNeeded() {
         Task {
-            if !(await isReachable(URL(string: "http://127.0.0.1:11434/api/tags")!)) {
+            let provider = savedBrainProvider()
+            if provider == "lmstudio" {
+                startLMStudioServerIfNeeded()
+            } else if !(await isReachable(URL(string: "http://127.0.0.1:11434/api/tags")!)) {
                 startOllama()
             }
             if !(await isEngineCompatible()) {
@@ -54,6 +59,19 @@ final class EngineProcessManager {
         engineProcess = process
     }
 
+    private func startLMStudioServerIfNeeded() {
+        guard lmStudioProcess == nil,
+              let executable = lmStudioExecutable(),
+              !isPortOpen(host: "127.0.0.1", port: 1234) else { return }
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = ["server", "start"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        lmStudioProcess = process
+    }
+
     private func stopExistingEngine() {
         engineProcess?.terminate()
         engineProcess = nil
@@ -94,6 +112,42 @@ final class EngineProcessManager {
             .map(URL.init(fileURLWithPath:))
     }
 
+    private func lmStudioExecutable() -> URL? {
+        let environment = ProcessInfo.processInfo.environment
+        let candidates = [
+            environment["NEXUS_LMS_PATH"],
+            "\(environment["HOME"] ?? NSHomeDirectory())/.lmstudio/bin/lms",
+            "/opt/homebrew/bin/lms",
+            "/usr/local/bin/lms"
+        ].compactMap { $0 }
+        return candidates.first(where: FileManager.default.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
+    }
+
+    private func savedBrainProvider() -> String {
+        guard let data = UserDefaults.standard.data(forKey: "NexusBrainConfig"),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let provider = object["provider"] as? String else {
+            return "ollama"
+        }
+        return provider
+    }
+
+    private func isPortOpen(host: String, port: UInt16) -> Bool {
+        let socketFD = socket(AF_INET, SOCK_STREAM, 0)
+        guard socketFD >= 0 else { return false }
+        defer { close(socketFD) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        inet_pton(AF_INET, host, &address.sin_addr)
+        return withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
+        }
+    }
+
     private func isReachable(_ url: URL) async -> Bool {
         var request = URLRequest(url: url)
         request.timeoutInterval = 0.5
@@ -108,6 +162,6 @@ final class EngineProcessManager {
               let features = payload["features"] as? [String: Any] else {
             return false
         }
-        return features["echoActions"] as? Bool == true
+        return features["echoActions"] as? Bool == true && features["echoRealtime"] as? Bool == true
     }
 }

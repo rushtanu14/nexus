@@ -8,6 +8,7 @@ struct LocalWorkflowStudioNativeApp: App {
     @State private var model = StudioModel()
     @State private var nexVoice = NexVoiceStore()
     @State private var echoStore = EchoStore()
+    @State private var shortcutCoordinator = NexShortcutCoordinator()
 
     init() {
         NSApplication.shared.setActivationPolicy(.regular)
@@ -21,6 +22,9 @@ struct LocalWorkflowStudioNativeApp: App {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     EngineProcessManager.shared.startIfNeeded()
                     model.startScheduleMonitor()
+                    shortcutCoordinator.install {
+                        nexVoice.startListening(using: model, echoStore: echoStore)
+                    }
                     DispatchQueue.main.async {
                         positionPrimaryWindowBottomRight()
                     }
@@ -61,7 +65,7 @@ struct LocalWorkflowStudioNativeApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
 
                 Button("Talk to Nex") {
-                    nexVoice.startListening(using: model)
+                    nexVoice.startListening(using: model, echoStore: echoStore)
                 }
                 .keyboardShortcut(.space, modifiers: [.shift])
             }
@@ -85,5 +89,33 @@ struct LocalWorkflowStudioNativeApp: App {
             height: height
         )
         window.setFrame(frame, display: true, animate: false)
+    }
+}
+
+@MainActor
+private final class NexShortcutCoordinator {
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
+
+    func install(action: @escaping @MainActor () -> Void) {
+        guard localMonitor == nil, globalMonitor == nil else { return }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard Self.isShiftSpace(event) else { return event }
+            action()
+            return nil
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            guard Self.isShiftSpace(event) else { return }
+            Task { @MainActor in
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                action()
+            }
+        }
+    }
+
+    private static func isShiftSpace(_ event: NSEvent) -> Bool {
+        guard event.keyCode == 49, !event.isARepeat else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return flags.contains(.shift) && !flags.contains(.command) && !flags.contains(.option) && !flags.contains(.control)
     }
 }
