@@ -704,94 +704,97 @@ private struct NexEchoSurface: View {
                 .frame(minWidth: 190, idealWidth: 230, maxWidth: 280)
                 .background(StudioPalette.sidebar)
 
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Nex Echo")
-                                .font(StudioType.echoTitle)
-                            Text("Low-latency voice transcription and polished meeting notes.")
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Nex Echo")
+                                    .font(StudioType.echoTitle)
+                                Text("Low-latency voice transcription and polished meeting notes.")
+                                    .font(StudioType.echoSecondary)
+                                    .foregroundStyle(StudioPalette.muted)
+                            }
+                            Spacer()
+                            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                                Text(Self.duration(store.elapsed))
+                                    .font(StudioType.code)
+                                    .foregroundStyle(StudioPalette.accentBright)
+                            }
+                            Button(action: store.toggleRecording) {
+                                Label(store.transcriber.isRecording ? "stop recording" : "start recording", systemImage: store.transcriber.isRecording ? "stop.fill" : "mic.fill")
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
+                        }
+
+                        if store.selectedSession == nil {
+                            EmptySurface(icon: "waveform", title: "Start a new echo", detail: "One click begins a named transcription session.")
+                        } else {
+                            HStack {
+                                TextField("Echo name", text: $store.sessionName)
+                                    .font(StudioType.echoCardTitle)
+                                    .textFieldStyle(.roundedBorder)
+                                    .onSubmit { store.renameSelected(store.sessionName) }
+                                Button("save name") { store.renameSelected(store.sessionName) }
+                                    .buttonStyle(SecondaryButtonStyle())
+                                Button("add transcript note") { store.makeNoteFromTranscript() }
+                                    .buttonStyle(SecondaryButtonStyle())
+                                Button(role: .destructive) {
+                                    store.deleteSelected()
+                                } label: {
+                                    Label("delete", systemImage: "trash")
+                                }
+                                .buttonStyle(SecondaryButtonStyle())
+                            }
+                            HSplitView {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("LIVE TRANSCRIPT").font(StudioType.echoMetadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
+                                    ScrollView {
+                                        MarkdownText(store.transcriber.isRecording ? store.transcriber.transcript : (store.selectedSession?.transcript ?? ""))
+                                            .font(StudioType.echoBody)
+                                    }
+                                }
+                                .padding(14)
+                                .background(StudioPalette.panel)
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text("NOTES").font(StudioType.echoMetadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
+                                        Spacer()
+                                        Button(isEditingNotes ? "done editing" : "edit raw") { isEditingNotes.toggle() }
+                                            .buttonStyle(SecondaryButtonStyle())
+                                        Button("polish with nex") { store.polishNotes(using: model) }
+                                            .buttonStyle(SecondaryButtonStyle())
+                                    }
+                                    if isEditingNotes {
+                                        TextEditor(text: Binding(get: { store.selectedSession?.notes ?? "" }, set: { store.updateNotes($0) }))
+                                            .font(StudioType.echoBody)
+                                            .scrollContentBackground(.hidden)
+                                            .background(StudioPalette.panelStrong)
+                                            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                    } else {
+                                        ScrollView {
+                                            MarkdownText(store.selectedSession?.notes ?? "")
+                                                .font(StudioType.echoBody)
+                                                .padding(10)
+                                        }
+                                        .background(StudioPalette.panelStrong)
+                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                    }
+                                }
+                                .padding(14)
+                                .background(StudioPalette.panel)
+                            }
+                            .frame(minHeight: 260, idealHeight: 360, maxHeight: .infinity)
+                            NexAssistantPanel(store: store)
+                            EchoMCPActionPanel(store: store, feedHeight: $actionFeedHeight, cardWidth: $actionCardWidth)
+                            Text(store.status)
                                 .font(StudioType.echoSecondary)
                                 .foregroundStyle(StudioPalette.muted)
                         }
-                        Spacer()
-                        TimelineView(.periodic(from: .now, by: 1)) { _ in
-                            Text(Self.duration(store.elapsed))
-                                .font(StudioType.code)
-                                .foregroundStyle(StudioPalette.accentBright)
-                        }
-                        Button(action: store.toggleRecording) {
-                            Label(store.transcriber.isRecording ? "stop recording" : "start recording", systemImage: store.transcriber.isRecording ? "stop.fill" : "mic.fill")
-                        }
-                        .buttonStyle(PrimaryButtonStyle())
                     }
-
-                    if store.selectedSession == nil {
-                        EmptySurface(icon: "waveform", title: "Start a new echo", detail: "One click begins a named transcription session.")
-                    } else {
-                        HStack {
-                            TextField("Echo name", text: $store.sessionName)
-                                .font(StudioType.echoCardTitle)
-                                .textFieldStyle(.roundedBorder)
-                                .onSubmit { store.renameSelected(store.sessionName) }
-                            Button("save name") { store.renameSelected(store.sessionName) }
-                                .buttonStyle(SecondaryButtonStyle())
-                            Button("add transcript note") { store.makeNoteFromTranscript() }
-                                .buttonStyle(SecondaryButtonStyle())
-                            Button(role: .destructive) {
-                                store.deleteSelected()
-                            } label: {
-                                Label("delete", systemImage: "trash")
-                            }
-                            .buttonStyle(SecondaryButtonStyle())
-                        }
-                        HSplitView {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("LIVE TRANSCRIPT").font(StudioType.echoMetadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
-                                ScrollView {
-                                    MarkdownText(store.transcriber.isRecording ? store.transcriber.transcript : (store.selectedSession?.transcript ?? ""))
-                                        .font(StudioType.echoBody)
-                                }
-                            }
-                            .padding(14)
-                            .background(StudioPalette.panel)
-
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                Text("NOTES").font(StudioType.echoMetadata).tracking(1.2).foregroundStyle(StudioPalette.muted)
-                                    Spacer()
-                                    Button(isEditingNotes ? "done editing" : "edit raw") { isEditingNotes.toggle() }
-                                        .buttonStyle(SecondaryButtonStyle())
-                                    Button("polish with nex") { store.polishNotes(using: model) }
-                                        .buttonStyle(SecondaryButtonStyle())
-                                }
-                                if isEditingNotes {
-                                    TextEditor(text: Binding(get: { store.selectedSession?.notes ?? "" }, set: { store.updateNotes($0) }))
-                                        .font(StudioType.echoBody)
-                                        .scrollContentBackground(.hidden)
-                                        .background(StudioPalette.panelStrong)
-                                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                                } else {
-                                    ScrollView {
-                                        MarkdownText(store.selectedSession?.notes ?? "")
-                                            .font(StudioType.echoBody)
-                                            .padding(10)
-                                    }
-                                    .background(StudioPalette.panelStrong)
-                                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                                }
-                            }
-                            .padding(14)
-                            .background(StudioPalette.panel)
-                        }
-                        .frame(minHeight: 260, idealHeight: 360, maxHeight: .infinity)
-                        NexAssistantPanel(store: store)
-                        EchoMCPActionPanel(store: store, feedHeight: $actionFeedHeight, cardWidth: $actionCardWidth)
-                        Text(store.status)
-                            .font(StudioType.echoSecondary)
-                            .foregroundStyle(StudioPalette.muted)
-                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .padding(24)
             }
         }
         .onAppear { store.startDashboardPolling() }
@@ -883,6 +886,7 @@ private struct EchoMCPActionPanel: View {
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
             } else {
                 EchoPetAgentStrip(actions: actions)
+                ActionFeedResizeHandle(feedHeight: $feedHeight)
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth), spacing: 10)], spacing: 10) {
                         ForEach(actions) { action in
@@ -899,10 +903,39 @@ private struct EchoMCPActionPanel: View {
             }
         }
         .padding(14)
-        .background(.ultraThinMaterial)
-        .overlay(liquidReflection(tint: StudioPalette.accent.opacity(0.08)))
+        .background(mcpGlassBackground(tint: StudioPalette.accent.opacity(0.18), wireframe: true))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(StudioPalette.line).allowsHitTesting(false))
+    }
+}
+
+private struct ActionFeedResizeHandle: View {
+    @Binding var feedHeight: Double
+    @State private var startingHeight = 0.0
+
+    var body: some View {
+        Capsule()
+            .fill(StudioPalette.accentBright.opacity(0.35))
+            .frame(width: 72, height: 6)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        if startingHeight == 0 { startingHeight = feedHeight }
+                        feedHeight = min(max(startingHeight + value.translation.height, 180), 620)
+                    }
+                    .onEnded { _ in startingHeight = 0 }
+            )
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .help("Drag to resize the action feed")
     }
 }
 
@@ -918,7 +951,7 @@ private struct EchoPetAgentStrip: View {
             HStack(spacing: 12) {
                 ForEach(visibleActions) { action in
                     HStack(spacing: 8) {
-                        MiniNexPet(row: action.status == "running" ? 7 : 8, tint: mcpTint(for: action))
+                        MiniNexPet(petName: action.petName, row: action.status == "running" ? 7 : 8, tint: mcpTint(for: action))
                             .frame(width: 34, height: 38)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(action.petName.uppercased()) agent")
@@ -931,10 +964,9 @@ private struct EchoPetAgentStrip: View {
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 7)
-                    .background(.ultraThinMaterial)
-                    .overlay(liquidReflection(tint: mcpTint(for: action).opacity(0.16)))
+                    .background(mcpGlassBackground(tint: mcpTint(for: action).opacity(0.24), wireframe: false))
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(mcpTint(for: action).opacity(0.28)))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(mcpTint(for: action).opacity(0.38)).allowsHitTesting(false))
                 }
                 Spacer()
             }
@@ -1028,10 +1060,9 @@ private struct EchoMCPActionCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial)
-        .overlay(liquidReflection(tint: mcpTint(for: action).opacity(0.2)))
+        .background(mcpGlassBackground(tint: mcpTint(for: action), wireframe: true))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(mcpTint(for: action).opacity(0.25)))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(mcpTint(for: action).opacity(0.55), lineWidth: 1.2).allowsHitTesting(false))
     }
 }
 
@@ -1059,15 +1090,36 @@ private struct MCPIconView: View {
 }
 
 private struct MiniNexPet: View {
+    var petName: String
     var row: Int
     var tint: Color
 
     var body: some View {
-        NexPetFrameView(col: 0, row: row, scale: 0.24)
+        AgentPetFrameView(petName: petName, col: 0, row: row, scale: 0.24)
             .padding(2)
             .background(tint.opacity(0.16))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.35)))
+    }
+}
+
+private struct AgentPetFrameView: View {
+    let petName: String
+    let col: Int
+    let row: Int
+    let scale: CGFloat
+
+    var body: some View {
+        if let image = PetAssets.agentSpritesheet(named: petName) {
+            Image(nsImage: image)
+                .resizable()
+                .frame(width: 1536 * scale, height: 1872 * scale)
+                .offset(x: -CGFloat(col) * 192 * scale, y: -CGFloat(row) * 208 * scale)
+                .frame(width: 192 * scale, height: 208 * scale, alignment: .topLeading)
+                .clipped()
+        } else {
+            NexPetFrameView(col: col, row: row, scale: scale)
+        }
     }
 }
 
@@ -1092,11 +1144,11 @@ private extension EchoMCPAction {
 private func mcpTint(for action: EchoMCPAction) -> Color {
     switch action.logoName {
     case "notion":
-        return Color(red: 0.96, green: 0.92, blue: 0.82)
+        return Color(red: 1.0, green: 0.92, blue: 0.66)
     case "gmail":
-        return Color(red: 0.96, green: 0.36, blue: 0.24)
+        return Color(red: 1.0, green: 0.22, blue: 0.12)
     case "drive":
-        return Color(red: 0.22, green: 0.72, blue: 0.64)
+        return Color(red: 0.08, green: 0.82, blue: 0.95)
     default:
         return StudioPalette.accent
     }
@@ -1116,6 +1168,50 @@ private func liquidReflection(tint: Color) -> some View {
             .blendMode(.screen)
     }
     .allowsHitTesting(false)
+}
+
+private func mcpGlassBackground(tint: Color, wireframe: Bool) -> some View {
+    ZStack {
+        Rectangle().fill(.ultraThinMaterial)
+        liquidReflection(tint: tint.opacity(0.42))
+        tint.opacity(0.16)
+        if wireframe {
+            WireframeOverlay(color: tint.opacity(0.42))
+        }
+    }
+    .allowsHitTesting(false)
+}
+
+private struct WireframeOverlay: View {
+    var color: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            Path { path in
+                let spacing: CGFloat = 18
+                var x: CGFloat = 0
+                while x <= proxy.size.width {
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+                    x += spacing
+                }
+                var y: CGFloat = 0
+                while y <= proxy.size.height {
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: proxy.size.width, y: y))
+                    y += spacing
+                }
+                path.move(to: .zero)
+                path.addLine(to: CGPoint(x: proxy.size.width, y: proxy.size.height))
+                path.move(to: CGPoint(x: proxy.size.width, y: 0))
+                path.addLine(to: CGPoint(x: 0, y: proxy.size.height))
+            }
+            .stroke(color, lineWidth: 0.45)
+        }
+        .blendMode(.screen)
+        .opacity(0.42)
+        .allowsHitTesting(false)
+    }
 }
 
 private extension NSImage {
@@ -2732,6 +2828,23 @@ enum PetAssets {
             return nil
         }
         return NSImage(contentsOf: url)
+    }
+
+    static func agentSpritesheet(named name: String) -> NSImage? {
+        let normalized = normalizedAgentName(name)
+        guard let url = Bundle.module.url(forResource: "\(normalized)-spritesheet", withExtension: "webp", subdirectory: normalized)
+            ?? Bundle.module.url(forResource: "\(normalized)-spritesheet", withExtension: "webp") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
+    }
+
+    private static func normalizedAgentName(_ name: String) -> String {
+        let lower = name.lowercased()
+        if lower.contains("77") || lower.contains("gmail") { return "77" }
+        if lower.contains("aqua") || lower.contains("notion") { return "aqua-wisp" }
+        if lower.contains("agumon") || lower.contains("calendar") || lower.contains("drive") { return "agumon" }
+        return lower
     }
 }
 
