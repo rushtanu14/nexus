@@ -120,13 +120,6 @@ private struct EchoAssistantResponse: Decodable {
     var snapshot: EchoDashboardResponse?
 }
 
-private struct EchoChunkRequest: Encodable {
-    var sessionId: String
-    var text: String
-    var title: String
-    var notes: String
-}
-
 private struct EchoAssistantRequest: Encodable {
     var sessionId: String
     var message: String
@@ -148,10 +141,6 @@ private struct EchoActionRunResponse: Decodable {
     var message: String
 }
 
-private final class SpeechRequestBox {
-    var request: SFSpeechAudioBufferRecognitionRequest?
-}
-
 @MainActor
 @Observable
 final class SpeechTranscriber {
@@ -164,26 +153,19 @@ final class SpeechTranscriber {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var finalHandler: ((String) -> Void)?
-    private var chunkHandler: ((String) -> Void)?
     private var startHandler: (() -> Void)?
     private var failureHandler: ((String) -> Void)?
     private var hasInputTap = false
-    private let requestBox = SpeechRequestBox()
     private var silenceTask: Task<Void, Never>?
     private var shouldAutoStopAfterSilence = false
-    private var shouldRestartAfterFinal = false
     private var recordingStartedAt: Date?
     private var lastVoiceHeardAt: Date?
-    private var committedTranscript = ""
-    private var lastPartialTranscript = ""
 
-    func start(autoStopAfterSilence: Bool = false, continuous: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onChunk: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
+    func start(autoStopAfterSilence: Bool = false, onStart: (() -> Void)? = nil, onFailure: ((String) -> Void)? = nil, onFinal: ((String) -> Void)? = nil) {
         guard !isRecording else { return }
         shouldAutoStopAfterSilence = autoStopAfterSilence
-        shouldRestartAfterFinal = continuous
         startHandler = onStart
         failureHandler = onFailure
-        chunkHandler = onChunk
         finalHandler = onFinal
         status = "Requesting permissions"
         Task {
@@ -213,9 +195,7 @@ final class SpeechTranscriber {
         task?.cancel()
         task = nil
         request = nil
-        requestBox.request = nil
         shouldAutoStopAfterSilence = false
-        shouldRestartAfterFinal = false
         recordingStartedAt = nil
         lastVoiceHeardAt = nil
         isRecording = false
@@ -235,9 +215,7 @@ final class SpeechTranscriber {
         task?.cancel()
         task = nil
         request = nil
-        requestBox.request = nil
         shouldAutoStopAfterSilence = false
-        shouldRestartAfterFinal = false
         recordingStartedAt = nil
         lastVoiceHeardAt = nil
         isRecording = false
@@ -249,7 +227,6 @@ final class SpeechTranscriber {
         startHandler = nil
         failureHandler = nil
         finalHandler = nil
-        chunkHandler = nil
     }
 
     private func requestPermissions() async -> Bool {
@@ -268,20 +245,16 @@ final class SpeechTranscriber {
             return false
         }
         transcript = ""
-        committedTranscript = ""
-        lastPartialTranscript = ""
         task?.cancel()
         task = nil
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         self.request = request
-        requestBox.request = request
 
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
-        let requestBox = requestBox
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            requestBox.request?.append(buffer)
+            request.append(buffer)
             guard let level = Self.audioLevel(from: buffer), level > -42 else { return }
             Task { @MainActor in
                 guard self?.shouldAutoStopAfterSilence == true else { return }
@@ -304,45 +277,18 @@ final class SpeechTranscriber {
             return false
         }
 
-        startRecognitionTask(with: recognizer)
-        return true
-    }
-
-    private func startRecognitionTask(with recognizer: SFSpeechRecognizer, cancelExisting: Bool = true) {
-        if cancelExisting { task?.cancel() }
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        self.request = request
-        requestBox.request = request
-        lastPartialTranscript = ""
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor in
-                guard let self else { return }
                 if let result {
-                    let nextTranscript = result.bestTranscription.formattedString
-                    let chunk = Self.newChunk(from: self.lastPartialTranscript, to: nextTranscript)
-                    self.lastPartialTranscript = nextTranscript
-                    self.transcript = [self.committedTranscript, nextTranscript].filter { !$0.isEmpty }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !chunk.isEmpty { self.chunkHandler?(chunk) }
-                    if result.isFinal {
-                        self.committedTranscript = self.transcript
-                        self.lastPartialTranscript = ""
-                        if self.shouldRestartAfterFinal, self.isRecording, !self.shouldAutoStopAfterSilence {
-                            self.startRecognitionTask(with: recognizer, cancelExisting: false)
-                        } else if self.shouldAutoStopAfterSilence == false {
-                            self.stop()
-                        }
-                    }
+                    self?.transcript = result.bestTranscription.formattedString
+                    if result.isFinal, self?.shouldAutoStopAfterSilence == false { self?.stop() }
                 } else if let error {
-                    self.status = error.localizedDescription
-                    if self.shouldRestartAfterFinal, self.isRecording {
-                        self.startRecognitionTask(with: recognizer)
-                    } else {
-                        self.stop()
-                    }
+                    self?.status = error.localizedDescription
+                    self?.stop()
                 }
             }
         }
+        return true
     }
 
     private func startSilenceMonitorIfNeeded() {
@@ -383,15 +329,6 @@ final class SpeechTranscriber {
         return 20 * log10(max(rms, 0.000_001))
     }
 
-    private static func newChunk(from previous: String, to next: String) -> String {
-        let cleanNext = next.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanPrevious = previous.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanNext.isEmpty, cleanNext.count > cleanPrevious.count else { return "" }
-        if cleanNext.hasPrefix(cleanPrevious) {
-            return String(cleanNext.dropFirst(cleanPrevious.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return cleanNext
-    }
 }
 
 @MainActor
@@ -537,11 +474,10 @@ final class EchoStore {
 
     func startRecording() {
         if selectedSession == nil { createEcho() }
-        guard let selectedID else { return }
+        guard selectedID != nil else { return }
         startDashboardPolling()
         status = "Requesting microphone"
         transcriber.start(
-            continuous: true,
             onStart: { [weak self] in
                 self?.recordingStartedAt = Date()
                 self?.status = "Recording"
@@ -549,9 +485,6 @@ final class EchoStore {
             onFailure: { [weak self] message in
                 self?.recordingStartedAt = nil
                 self?.status = message
-            },
-            onChunk: { [weak self] chunk in
-                self?.sendLiveTranscriptChunk(sessionID: selectedID, text: chunk)
             },
             onFinal: { [weak self] transcript in
                 self?.saveTranscript(transcript)
@@ -721,29 +654,6 @@ final class EchoStore {
             } catch {
                 updateAction(action.id, status: "failed")
                 status = error.localizedDescription
-            }
-        }
-    }
-
-    private func sendLiveTranscriptChunk(sessionID: UUID, text: String) {
-        let chunk = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !chunk.isEmpty else { return }
-        let title = selectedSession?.name ?? "Echo meeting"
-        let notes = selectedSession?.notes ?? ""
-        Task {
-            do {
-                var request = URLRequest(url: URL(string: "http://127.0.0.1:3131/echo/chunk")!)
-                request.httpMethod = "POST"
-                request.setValue("application/json", forHTTPHeaderField: "content-type")
-                request.httpBody = try JSONEncoder().encode(EchoChunkRequest(sessionId: sessionID.uuidString, text: chunk, title: title, notes: notes))
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                    throw NSError(domain: "NexusEcho", code: 1, userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "Could not stream Echo chunk"])
-                }
-                let decoded = try JSONDecoder().decode(EchoAssistantResponse.self, from: data)
-                if let actions = decoded.snapshot?.actions { replaceActions(actions, for: sessionID) }
-            } catch {
-                status = "Live inference unavailable"
             }
         }
     }
