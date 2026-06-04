@@ -5,6 +5,9 @@ import { runGmailPet } from "./pets/gmail.js";
 import { runNotionPet } from "./pets/notion.js";
 
 const PET_RUNNERS = {
+  "77": runGmailPet,
+  "aqua-wisp": runNotionPet,
+  Agumon: runGcalPet,
   gcal: runGcalPet,
   gmail: runGmailPet,
   notion: runNotionPet
@@ -60,8 +63,8 @@ async function runGenericPet(action, { progress }) {
 }
 
 function petForTool(tool) {
-  if (tool.startsWith("calendar_") || tool.startsWith("gcal_")) return "gcal";
-  if (tool.startsWith("gmail_")) return "gmail";
-  if (tool.startsWith("notion_")) return "notion";
+  if (tool.startsWith("calendar_") || tool.startsWith("gcal_") || tool === "create_calendar_event") return "Agumon";
+  if (tool.startsWith("gmail_") || tool === "draft_email") return "77";
+  if (tool.startsWith("notion_") || tool === "create_tasks") return "aqua-wisp";
   return "mcp";
 }
