@@ -3,14 +3,18 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import test from "node:test";
 import { executeNode } from "../src/executor.js";
+import { NexAssistant } from "../src/assistant/NexAssistant.js";
+import { ActionInferrer } from "../src/echo/ActionInferrer.js";
 import { configureGenerator, generateNode, getGenerationCount, resetGenerationCount } from "../src/generator.js";
 import { createLifePlan } from "../src/life-assistant.js";
 import { createMemoryStore } from "../src/memory-store.js";
 import { clearServers, registerServer, scrapeServer } from "../src/mcp-registry.js";
 import { validateNode, validateSchema } from "../src/node-schema.js";
 import { clearNodes, findNode, saveNode } from "../src/node-store.js";
+import { PetSpawner } from "../src/pets/PetSpawner.js";
 import { configureRunners, resetRunners, RUNNERS } from "../src/runners/index.js";
 import { createServer } from "../src/server.js";
+import { ActionStore } from "../src/store/ActionStore.js";
 
 test.beforeEach(async () => {
   await clearNodes();
@@ -187,6 +191,80 @@ test("api: health advertises echo action compatibility", async () => {
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("echo: live chunks infer ambiguous meeting actions before recording stops", async () => {
+  const store = new ActionStore();
+  const inferrer = new ActionInferrer({ store, intervalWords: 5, confidenceThreshold: 0.7 });
+  const sessionId = "meeting-live";
+  await inferrer.handleChunk({ sessionId, title: "Marcus sync", text: "okay let's book a 3pm tomorrow with Marcus" });
+  await inferrer.handleChunk({ sessionId, title: "Marcus sync", text: "and put the design action items into Notion" });
+  const actions = store.snapshot(sessionId).actions;
+  assert(actions.some((action) => action.tool === "calendar_create_event"));
+  assert(actions.some((action) => action.tool === "notion_create_page"));
+  assert(actions.find((action) => action.tool === "calendar_create_event").params.when.includes("3pm"));
+});
+
+test("echo: duplicate source quotes are not emitted twice", async () => {
+  const store = new ActionStore();
+  const inferrer = new ActionInferrer({ store, intervalWords: 1, confidenceThreshold: 0.7 });
+  const sessionId = "meeting-dedupe";
+  const text = "let's schedule a meeting tomorrow at 3pm with Marcus";
+  await inferrer.handleChunk({ sessionId, text });
+  await inferrer.handleChunk({ sessionId, text });
+  const calendarActions = store.snapshot(sessionId).actions.filter((action) => action.tool === "calendar_create_event");
+  assert.equal(calendarActions.length, 1);
+});
+
+test("echo: pet spawner updates action lifecycle independently", async () => {
+  const store = new ActionStore();
+  const spawner = new PetSpawner({ store });
+  const action = store.upsertAction({
+    type: "mcp_action",
+    tool: "calendar_create_event",
+    params: { title: "Marcus sync", when: "tomorrow 3pm" },
+    confidence: 0.9,
+    source_quote: "book a 3pm tomorrow with Marcus"
+  }, { sessionId: "meeting-pet" });
+  spawner.spawn(action);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const updated = store.snapshot("meeting-pet").actions[0];
+  assert.equal(updated.status, "done");
+  assert.equal(updated.result.ok, true);
+});
+
+test("echo: assistant edits, splits, and cancels queue actions", async () => {
+  const store = new ActionStore();
+  const spawner = new PetSpawner({ store });
+  const assistant = new NexAssistant({ store, spawner });
+  const sessionId = "meeting-assistant";
+  store.upsertAction({
+    type: "mcp_action",
+    tool: "calendar_create_event",
+    params: { title: "Marcus sync", when: "tomorrow 3pm" },
+    confidence: 0.9,
+    source_quote: "book a 3pm tomorrow with Marcus"
+  }, { sessionId });
+  store.upsertAction({
+    type: "mcp_action",
+    tool: "notion_create_page",
+    params: { title: "Meeting notes", content: "Design needs mockups. Engineering needs API owners." },
+    confidence: 0.84,
+    source_quote: "put the notes in notion"
+  }, { sessionId });
+  const email = store.upsertAction({
+    type: "mcp_action",
+    tool: "gmail_draft_email",
+    params: { subject: "Follow up", body: "Meeting recap" },
+    confidence: 0.8,
+    source_quote: "send that email"
+  }, { sessionId });
+  await assistant.handleMessage({ sessionId, message: "change that calendar event to 4pm not 3pm" });
+  assert(store.snapshot(sessionId).actions.some((action) => action.tool === "calendar_create_event" && action.params.when.includes("4pm")));
+  await assistant.handleMessage({ sessionId, message: "actually split that into two notion pages, one for design and one for eng" });
+  assert.equal(store.snapshot(sessionId).actions.filter((action) => action.tool === "notion_create_page").length, 2);
+  await assistant.handleMessage({ sessionId, message: "don't send that email" });
+  assert.equal(store.snapshot(sessionId).actions.find((action) => action.id === email.id).status, "canceled");
 });
 
 test("life: pasted meeting notes produce a command plan", () => {
