@@ -39,6 +39,7 @@ export class ActionInferrer {
     const rawActions = await this.modelActions({ bufferText, title, notes, brain });
     const accepted = rawActions
       .map((action) => normalizeAction({ ...action, sessionId }))
+      .filter((action) => isActionable(action))
       .filter((action) => action.confidence >= this.confidenceThreshold)
       .filter((action) => this.markIfNew(action));
     for (const action of accepted) this.store.upsertAction(action, { sessionId });
@@ -84,6 +85,8 @@ export function buildInferencePrompt({ bufferText, title, notes }) {
   return [
     "You are Nex Echo ActionInferrer. Return only a JSON array.",
     "Find MCP actions implied by an in-progress meeting transcript. Do not wait for sentence completion.",
+    "Only infer an action when the speaker explicitly asks to create, schedule, draft, send, update, split, add, or save something. Tool names or keywords alone are not actionable.",
+    "If a phrase only mentions Gmail, Notion, Drive, notes, or calendar without a command verb, return [].",
     "Schema: [{\"type\":\"mcp_action\",\"tool\":\"calendar_create_event|notion_create_page|notion_update_page|gmail_draft_email\",\"params\":{},\"confidence\":0.0,\"source_quote\":\"exact phrase\"}]",
     "Return [] when there is no useful action. Use confidence above 0.7 only for actionable intent.",
     "",
@@ -111,8 +114,8 @@ export function inferHeuristicActions({ bufferText, title = "Echo meeting", note
   const lower = context.toLowerCase();
   const actions = [];
 
-  const calendarQuote = quoteAround(context, /\b(book|schedule|calendar|meet|meeting|call)\b/i);
-  if (calendarQuote && /\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(am|pm))\b/i.test(context)) {
+  const calendarQuote = quoteAround(context, /\b(book|schedule|set up|create|add)\b.{0,70}\b(calendar|meeting|call|invite|event)\b|\b(book|schedule|set up)\b/i);
+  if (calendarQuote && /\b(book|schedule|set up|create|add)\b/i.test(calendarQuote) && /\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(am|pm))\b/i.test(context)) {
     actions.push({
       type: "mcp_action",
       tool: "calendar_create_event",
@@ -127,8 +130,8 @@ export function inferHeuristicActions({ bufferText, title = "Echo meeting", note
     });
   }
 
-  const emailQuote = quoteAround(context, /\b(send|draft|email|follow up|follow-up)\b/i);
-  if (emailQuote && /\b(email|follow up|follow-up|send|draft)\b/i.test(context)) {
+  const emailQuote = quoteAround(context, /\b(send|draft|write|prepare|create)\b.{0,80}\b(email|follow up|follow-up|gmail|message)\b/i);
+  if (emailQuote && /\b(send|draft|write|prepare|create)\b/i.test(emailQuote)) {
     actions.push({
       type: "mcp_action",
       tool: "gmail_draft_email",
@@ -142,8 +145,8 @@ export function inferHeuristicActions({ bufferText, title = "Echo meeting", note
     });
   }
 
-  const notionQuote = quoteAround(context, /\b(notion|notes|action items|tasks|recap|design|engineering|eng)\b/i);
-  if (notionQuote && /\b(notion|notes|action items|tasks|recap|meeting notes|design|engineering|eng)\b/i.test(context)) {
+  const notionQuote = quoteAround(context, /\b(create|add|save|put|send|update|split|export)\b.{0,90}\b(notion|notes|action items|tasks|recap|page|pages)\b/i);
+  if (notionQuote && /\b(create|add|save|put|send|update|split|export)\b/i.test(notionQuote)) {
     actions.push({
       type: "mcp_action",
       tool: "notion_create_page",
@@ -157,6 +160,17 @@ export function inferHeuristicActions({ bufferText, title = "Echo meeting", note
   }
 
   return actions.map((action) => ({ id: crypto.randomUUID(), ...action }));
+}
+
+function isActionable(action) {
+  const quote = String(action.source_quote ?? "").toLowerCase();
+  if (!quote) return false;
+  const hasVerb = /\b(book|schedule|set up|create|add|draft|send|write|prepare|save|put|update|split|export)\b/.test(quote);
+  if (!hasVerb) return false;
+  if (action.tool === "calendar_create_event") return /\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(am|pm))\b/i.test(`${quote} ${JSON.stringify(action.params)}`);
+  if (action.tool === "gmail_draft_email") return /\b(email|gmail|follow up|follow-up|message)\b/.test(quote);
+  if (action.tool.startsWith("notion_")) return /\b(notion|notes|action items|tasks|recap|page|pages)\b/.test(quote);
+  return true;
 }
 
 function quoteAround(text, pattern) {

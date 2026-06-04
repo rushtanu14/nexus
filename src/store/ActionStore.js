@@ -43,7 +43,7 @@ export class ActionStore extends EventEmitter {
     if (existingIndex >= 0) {
       session.actions[existingIndex] = { ...session.actions[existingIndex], ...normalized, updatedAt: new Date().toISOString() };
     } else {
-      const duplicate = session.actions.find((item) => actionKey(item) === actionKey(normalized));
+      const duplicate = session.actions.find((item) => isDuplicateAction(item, normalized));
       if (duplicate) return duplicate;
       session.actions.unshift(normalized);
       this.emit("action:inferred", normalized);
@@ -104,7 +104,7 @@ export class ActionStore extends EventEmitter {
 export const actionStore = new ActionStore();
 
 export function normalizeAction(action) {
-  const tool = String(action.tool ?? action.mcp?.tool ?? "unknown_tool");
+  const tool = normalizeTool(action.tool ?? action.mcp?.tool ?? "unknown_tool");
   const provider = providerForTool(tool);
   const params = action.params ?? action.mcp?.inputs ?? {};
   const sourceQuote = String(action.source_quote ?? action.sourceQuote ?? action.summary ?? "").trim();
@@ -135,16 +135,16 @@ export function normalizeAction(action) {
 }
 
 function providerForTool(tool) {
-  if (tool.startsWith("calendar_") || tool.startsWith("gcal_")) return { name: "Google Calendar", server: "google-workspace" };
-  if (tool.startsWith("gmail_")) return { name: "Gmail", server: "gmail" };
-  if (tool.startsWith("notion_")) return { name: "Notion", server: "notion" };
+  if (tool.startsWith("calendar_") || tool.startsWith("gcal_") || tool === "create_calendar_event") return { name: "Google Calendar", server: "google-workspace" };
+  if (tool.startsWith("gmail_") || tool === "draft_email") return { name: "Gmail", server: "gmail" };
+  if (tool.startsWith("notion_") || tool === "create_tasks") return { name: "Notion", server: "notion" };
   return { name: "MCP", server: "mcp" };
 }
 
 function petForTool(tool) {
-  if (tool.startsWith("calendar_") || tool.startsWith("gcal_")) return "gcal";
-  if (tool.startsWith("gmail_")) return "gmail";
-  if (tool.startsWith("notion_")) return "notion";
+  if (tool.startsWith("calendar_") || tool.startsWith("gcal_") || tool === "create_calendar_event") return "Agumon";
+  if (tool.startsWith("gmail_") || tool === "draft_email") return "77";
+  if (tool.startsWith("notion_") || tool === "create_tasks") return "aqua-wisp";
   return "mcp";
 }
 
@@ -167,6 +167,45 @@ function stringifyParams(params) {
   return Object.fromEntries(Object.entries(params ?? {}).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]));
 }
 
-function actionKey(action) {
-  return `${action.sessionId}:${action.tool}:${String(action.source_quote ?? "").toLowerCase().replace(/\s+/g, " ").trim()}`;
+function normalizeTool(tool) {
+  const raw = String(tool ?? "unknown_tool").toLowerCase().trim();
+  if (raw.includes("|")) return normalizeTool(raw.split("|")[0]);
+  if (raw.includes("gmail") || raw === "draft_email") return "gmail_draft_email";
+  if (raw.includes("calendar") || raw.includes("gcal") || raw === "create_calendar_event") return "calendar_create_event";
+  if (raw.includes("notion") && raw.includes("update")) return "notion_update_page";
+  if (raw.includes("notion") || raw === "create_tasks") return "notion_create_page";
+  return raw.replaceAll(/\s+/g, "_");
+}
+
+function isDuplicateAction(left, right) {
+  if (`${left.sessionId}:${left.id}` === `${right.sessionId}:${right.id}`) return true;
+  if (semanticActionKey(left) === semanticActionKey(right)) return true;
+  const leftQuote = normalizedQuote(left);
+  const rightQuote = normalizedQuote(right);
+  return left.sessionId === right.sessionId &&
+    left.tool === right.tool &&
+    leftQuote &&
+    rightQuote &&
+    (leftQuote.includes(rightQuote) || rightQuote.includes(leftQuote));
+}
+
+function semanticActionKey(action) {
+  const params = action.params ?? {};
+  const title = stableText(params.title ?? params.subject ?? action.title ?? "");
+  const recipient = stableText(params.to ?? params.attendees ?? params.attendees_hint ?? "");
+  const when = stableText(params.when ?? params.date ?? params.time ?? params.when_hint ?? "");
+  const content = stableText(params.content ?? params.body ?? params.tasks ?? "").slice(0, 80);
+  return [action.sessionId, action.tool, title, recipient, when, content].join(":");
+}
+
+function normalizedQuote(action) {
+  return stableText(action.source_quote ?? "");
+}
+
+function stableText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9:@.\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
