@@ -2,6 +2,8 @@ import http from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import express from "express";
+import { NexAssistant } from "./assistant/NexAssistant.js";
+import { ActionInferrer } from "./echo/ActionInferrer.js";
 import { buildEchoActions, runEchoAction } from "./echo-actions.js";
 import { executeNode } from "./executor.js";
 import { generateNode, OLLAMA_BASE_URL, OLLAMA_MODEL } from "./generator.js";
@@ -9,11 +11,17 @@ import { createLifePlan } from "./life-assistant.js";
 import { createMemoryStore } from "./memory-store.js";
 import { listServers, registerServer, scrapeServer } from "./mcp-registry.js";
 import { clearNodes, deleteNode, listNodes, saveNode } from "./node-store.js";
+import { PetSpawner } from "./pets/PetSpawner.js";
+import { actionStore } from "./store/ActionStore.js";
 
 const execFileAsync = promisify(execFile);
 
 export function createApp() {
   const app = express();
+  const complete = (prompt, brain) => completeWithNex(prompt, brain, "");
+  const inferrer = new ActionInferrer({ store: actionStore, complete });
+  const petSpawner = new PetSpawner({ store: actionStore });
+  const assistant = new NexAssistant({ store: actionStore, complete, spawner: petSpawner });
   app.use(express.json({ limit: process.env.NEXUS_JSON_LIMIT ?? "2mb" }));
 
   app.get("/health", asyncRoute(async (_request, response) => {
@@ -24,7 +32,10 @@ export function createApp() {
       qdrant: await memoryStatus(),
       features: {
         echoActions: true,
-        echoMCPWorkflows: true
+        echoMCPWorkflows: true,
+        echoRealtime: true,
+        echoPets: true,
+        echoAssistantQueue: true
       }
     });
   }));
@@ -101,6 +112,44 @@ export function createApp() {
       tags: ["echo", "mcp", "automation"]
     });
     response.json({ actions, memory_status: memory.status });
+  }));
+  app.post("/echo/chunk", asyncRoute(async (request, response) => {
+    const sessionId = request.body.sessionId ?? "default";
+    const text = request.body.text ?? request.body.chunk ?? "";
+    const title = request.body.title ?? "Echo meeting";
+    const notes = request.body.notes ?? "";
+    actionStore.appendTranscriptChunk({ sessionId, text });
+    const actions = await inferrer.handleChunk({ sessionId, text, title, notes, brain: request.body.brain ?? {} });
+    response.json({ ok: true, actions, snapshot: actionStore.snapshot(sessionId) });
+  }));
+  app.post("/echo/infer", asyncRoute(async (request, response) => {
+    const sessionId = request.body.sessionId ?? "default";
+    const actions = await inferrer.infer({
+      sessionId,
+      title: request.body.title ?? "Echo meeting",
+      notes: request.body.notes ?? "",
+      brain: request.body.brain ?? {}
+    });
+    response.json({ actions, snapshot: actionStore.snapshot(sessionId) });
+  }));
+  app.get("/echo/dashboard", asyncRoute(async (request, response) => {
+    response.json(actionStore.snapshot(request.query.sessionId ?? "default"));
+  }));
+  app.post("/echo/action/dispatch", asyncRoute(async (request, response) => {
+    const sessionId = request.body.sessionId ?? request.body.action?.sessionId ?? "default";
+    const action = actionStore.upsertAction({ ...request.body.action, status: "pending" }, { sessionId });
+    const pet = petSpawner.spawn(action);
+    response.json({ ok: true, pet, action, snapshot: actionStore.snapshot(sessionId) });
+  }));
+  app.post("/echo/action/cancel", asyncRoute(async (request, response) => {
+    const sessionId = request.body.sessionId ?? "default";
+    const action = petSpawner.cancel(request.body.actionId, sessionId) ?? actionStore.cancelAction(request.body.actionId, { sessionId });
+    response.json({ ok: Boolean(action), action, snapshot: actionStore.snapshot(sessionId) });
+  }));
+  app.post("/echo/assistant", asyncRoute(async (request, response) => {
+    const sessionId = request.body.sessionId ?? "default";
+    const result = await assistant.handleMessage({ sessionId, message: request.body.message ?? "", brain: request.body.brain ?? {} });
+    response.json({ ok: true, ...result });
   }));
   app.post("/echo/action/run", asyncRoute(async (request, response) => {
     const result = runEchoAction(request.body.action, { registeredServers: await listServers() });
