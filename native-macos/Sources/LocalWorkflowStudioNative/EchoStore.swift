@@ -810,7 +810,7 @@ final class NexVoiceStore {
     var requestedAutomation: String?
     let transcriber = SpeechTranscriber()
 
-    func toggle(using model: StudioModel) {
+    func toggle(using model: StudioModel, echoStore: EchoStore? = nil) {
         if transcriber.isRecording {
             transcriber.stop()
         } else {
@@ -820,7 +820,7 @@ final class NexVoiceStore {
                 self?.response = "Thinking..."
                 Task {
                     do {
-                        if let spoken = self?.route(transcript, using: model) {
+                        if let spoken = self?.route(transcript, using: model, echoStore: echoStore) {
                             self?.response = spoken
                             NexSpeechOutput.shared.speak(spoken)
                             return
@@ -842,8 +842,14 @@ final class NexVoiceStore {
         if !transcriber.isRecording { toggle(using: model) }
     }
 
-    private func route(_ prompt: String, using model: StudioModel) -> String? {
+    private func route(_ prompt: String, using model: StudioModel, echoStore: EchoStore?) -> String? {
         let lower = prompt.lowercased()
+        if shouldRouteToEchoAssistant(lower), let echoStore {
+            requestedSection = "echo"
+            echoStore.assistantMessage = prompt
+            echoStore.sendAssistantMessage()
+            return "I sent that to Nex Echo."
+        }
         if lower.contains("echo") || lower.contains("meeting") || lower.contains("notes") { requestedSection = "echo"; return nil }
         else if lower.contains("brain") || lower.contains("model") { requestedSection = "brain"; return nil }
         else if lower.contains("hub") || lower.contains("workflow list") { requestedSection = "hub"; return nil }
@@ -860,6 +866,11 @@ final class NexVoiceStore {
             return automationProcessSummary(prompt)
         }
         return nil
+    }
+
+    private func shouldRouteToEchoAssistant(_ lower: String) -> Bool {
+        guard lower.contains("echo") || lower.contains("calendar") || lower.contains("notion") || lower.contains("email") || lower.contains("notes") else { return false }
+        return lower.contains("split") || lower.contains("change") || lower.contains("cancel") || lower.contains("don't") || lower.contains("do not") || lower.contains("add context") || lower.contains("include")
     }
 
     private func needsWebsiteLink(_ prompt: String) -> Bool {

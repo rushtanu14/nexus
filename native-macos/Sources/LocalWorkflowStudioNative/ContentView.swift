@@ -88,7 +88,7 @@ struct ContentView: View {
             }
 
             if nexVoice.isVisible {
-                FloatingNexOverlay(model: model, voice: nexVoice)
+                FloatingNexOverlay(model: model, voice: nexVoice, echoStore: echoStore)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.trailing, 18)
                     .padding(.top, 78)
@@ -2678,6 +2678,7 @@ private struct NexPetView: View {
 private struct FloatingNexOverlay: View {
     @Bindable var model: StudioModel
     @Bindable var voice: NexVoiceStore
+    @Bindable var echoStore: EchoStore
     @State private var offset = CGSize.zero
     @State private var dragOrigin = CGSize.zero
     @State private var petScale: CGFloat = 1.05
@@ -2702,7 +2703,7 @@ private struct FloatingNexOverlay: View {
             }
             HStack(spacing: 8) {
                 Button {
-                    voice.toggle(using: model)
+                    voice.toggle(using: model, echoStore: echoStore)
                 } label: {
                     Image(systemName: voice.transcriber.isRecording ? "stop.fill" : "mic.fill")
                 }
