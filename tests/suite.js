@@ -216,6 +216,33 @@ test("echo: duplicate source quotes are not emitted twice", async () => {
   assert.equal(calendarActions.length, 1);
 });
 
+test("echo: semantically duplicate MCP actions collapse even when quotes drift", () => {
+  const store = new ActionStore();
+  store.upsertAction({
+    type: "mcp_action",
+    tool: "gmail_draft_email",
+    params: { subject: "QA Report", to: "Steve", body: "Draft QA report follow-up" },
+    confidence: 0.82,
+    source_quote: "draft an email to Steve about the QA report"
+  }, { sessionId: "meeting-semantic-dedupe" });
+  store.upsertAction({
+    type: "mcp_action",
+    tool: "gmail_draft_email",
+    params: { subject: "QA Report", to: "Steve", body: "Draft QA report follow-up" },
+    confidence: 0.81,
+    source_quote: "please draft an email to Steve about the QA report for Q1"
+  }, { sessionId: "meeting-semantic-dedupe" });
+  assert.equal(store.snapshot("meeting-semantic-dedupe").actions.length, 1);
+});
+
+test("echo: keyword mentions alone do not infer MCP actions", async () => {
+  const store = new ActionStore();
+  const inferrer = new ActionInferrer({ store, intervalWords: 1, confidenceThreshold: 0.7 });
+  const sessionId = "meeting-keyword-only";
+  await inferrer.handleChunk({ sessionId, text: "Gmail Notion calendar drive notes action items engineering design" });
+  assert.equal(store.snapshot(sessionId).actions.length, 0);
+});
+
 test("echo: pet spawner updates action lifecycle independently", async () => {
   const store = new ActionStore();
   const spawner = new PetSpawner({ store });
