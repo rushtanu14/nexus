@@ -1,19 +1,30 @@
 <div align="center">
+  
+<table>
+<tr>
+<td valign="middle">
 
-<br/>
+<pre>
+███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗         
+████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝         
+██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗         
+██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║
+██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
+╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+</pre>
 
-```
+</td>
+<td valign="middle">
 
-  ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗       the agent harness that
-  ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝       turns any local model 
-  ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗       into your autonomous personal assitant
-  ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║
-  ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
-  ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+<pre>
+the agent harness that
+turns any local model
+into your autonomous personal assistant
+</pre>
 
-```
- 
-### *the agent harness that turns any local model into an autonomous personal assistant*
+</td>
+</tr>
+</table>
 
 <br/>
 
@@ -31,8 +42,6 @@
 </p>
 
 <br/>
-
-> **100% local, zero cloud** 
 
 </div>
 
