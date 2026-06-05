@@ -349,6 +349,68 @@ public struct BrainCatalog: Equatable, Sendable {
     public init() {}
 }
 
+public struct CalendarEventDraft: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var dateText: String
+    public var timeText: String
+    public var source: String
+    public var context: String
+    public var status: String?
+
+    public init(id: String, title: String, dateText: String, timeText: String, source: String, context: String, status: String? = nil) {
+        self.id = id
+        self.title = title
+        self.dateText = dateText
+        self.timeText = timeText
+        self.source = source
+        self.context = context
+        self.status = status
+    }
+}
+
+public struct CalendarInference: Codable, Equatable, Sendable {
+    public var title: String
+    public var brief: String
+    public var events: [CalendarEventDraft]
+}
+
+public struct CalendarEventsResponse: Codable, Equatable, Sendable {
+    public var events: [CalendarEventDraft]
+}
+
+public struct MCPConnector: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var server: String
+    public var url: String
+    public var status: String
+    public var authenticated: Bool
+    public var description: String
+    public var tools: [String]
+}
+
+public struct MCPRegistryResponse: Codable, Equatable, Sendable {
+    public var connectors: [MCPConnector]
+}
+
+public struct DailyTask: Identifiable, Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var status: String
+    public var dayKey: String
+    public var createdAt: String
+    public var completedAt: String?
+}
+
+public struct DailyTaskSnapshot: Codable, Equatable, Sendable {
+    public var dayKey: String
+    public var resetsAt: String
+    public var tasks: [DailyTask]
+
+    public static let empty = DailyTaskSnapshot(dayKey: "", resetsAt: "", tasks: [])
+}
+
 public protocol WorkflowEngineClientProtocol: Sendable {
     func generateNode(intent: String, context: [String: JSONValue]) async throws -> ExecutableNode
     func runNode(_ node: ExecutableNode, context: [String: JSONValue]) async throws -> EngineRunResult
@@ -358,6 +420,16 @@ public protocol WorkflowEngineClientProtocol: Sendable {
     func clearNodes() async throws
     func completeWithNex(prompt: String, brain: BrainConfig) async throws -> String
     func prepareBrain(_ brain: BrainConfig) async throws -> String
+    func listCalendarEvents() async throws -> [CalendarEventDraft]
+    func inferCalendar(title: String, transcript: String, spoken: String, connectorContext: String) async throws -> CalendarInference
+    func createCalendarEvent(_ event: CalendarEventDraft) async throws -> CalendarEventDraft
+    func resetCalendar() async throws
+    func listMCPConnectors() async throws -> [MCPConnector]
+    func authenticateMCPConnector(id: String, url: String, accessToken: String) async throws -> MCPConnector
+    func listDailyTasks() async throws -> DailyTaskSnapshot
+    func addDailyTask(title: String) async throws -> DailyTaskSnapshot
+    func toggleDailyTask(id: String) async throws -> DailyTaskSnapshot
+    func resetDailyTasks() async throws -> DailyTaskSnapshot
 }
 
 public extension WorkflowEngineClientProtocol {
@@ -369,6 +441,20 @@ public extension WorkflowEngineClientProtocol {
     func prepareBrain(_ brain: BrainConfig) async throws -> String {
         throw EngineClientError.requestFailed("Brain preparation is unavailable for this engine client")
     }
+    func listCalendarEvents() async throws -> [CalendarEventDraft] { [] }
+    func inferCalendar(title: String, transcript: String, spoken: String, connectorContext: String) async throws -> CalendarInference {
+        throw EngineClientError.requestFailed("Calendar inference is unavailable for this engine client")
+    }
+    func createCalendarEvent(_ event: CalendarEventDraft) async throws -> CalendarEventDraft { event }
+    func resetCalendar() async throws {}
+    func listMCPConnectors() async throws -> [MCPConnector] { [] }
+    func authenticateMCPConnector(id: String, url: String, accessToken: String) async throws -> MCPConnector {
+        throw EngineClientError.requestFailed("MCP authentication is unavailable for this engine client")
+    }
+    func listDailyTasks() async throws -> DailyTaskSnapshot { .empty }
+    func addDailyTask(title: String) async throws -> DailyTaskSnapshot { .empty }
+    func toggleDailyTask(id: String) async throws -> DailyTaskSnapshot { .empty }
+    func resetDailyTasks() async throws -> DailyTaskSnapshot { .empty }
 }
 
 public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
@@ -412,6 +498,54 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
 
     public func prepareBrain(_ brain: BrainConfig) async throws -> String {
         try await request(path: "/brain/prepare", body: BrainRequest(brain: brain), response: BrainPrepareResponse.self).status
+    }
+
+    public func listCalendarEvents() async throws -> [CalendarEventDraft] {
+        try await get(path: "/calendar/events", response: CalendarEventsResponse.self).events
+    }
+
+    public func inferCalendar(title: String, transcript: String, spoken: String, connectorContext: String) async throws -> CalendarInference {
+        try await request(path: "/calendar/infer", body: CalendarInferRequest(title: title, transcript: transcript, spoken: spoken, connectorContext: connectorContext), response: CalendarInference.self)
+    }
+
+    public func createCalendarEvent(_ event: CalendarEventDraft) async throws -> CalendarEventDraft {
+        try await request(path: "/calendar/event/create", body: CalendarCreateRequest(event: event), response: CalendarCreateResponse.self).event
+    }
+
+    public func resetCalendar() async throws {
+        _ = try await request(path: "/calendar/reset", body: EmptyRequest(), response: OKResponse.self)
+    }
+
+    public func listMCPConnectors() async throws -> [MCPConnector] {
+        try await get(path: "/mcp/registry", response: MCPRegistryResponse.self).connectors
+    }
+
+    public func authenticateMCPConnector(id: String, url: String, accessToken: String) async throws -> MCPConnector {
+        try await request(path: "/mcp/authenticate", body: MCPAuthenticateRequest(id: id, url: url, auth: MCPAuthRequest(accessToken: accessToken)), response: MCPAuthenticateResponse.self).connector
+    }
+
+    public func listDailyTasks() async throws -> DailyTaskSnapshot {
+        try await get(path: "/dashboard/tasks", response: DailyTaskSnapshot.self)
+    }
+
+    public func addDailyTask(title: String) async throws -> DailyTaskSnapshot {
+        try await request(path: "/dashboard/tasks/add", body: DailyTaskAddRequest(title: title), response: DailyTaskSnapshot.self)
+    }
+
+    public func toggleDailyTask(id: String) async throws -> DailyTaskSnapshot {
+        try await request(path: "/dashboard/tasks/toggle", body: NodeIDRequest(id: id), response: DailyTaskSnapshot.self)
+    }
+
+    public func resetDailyTasks() async throws -> DailyTaskSnapshot {
+        try await request(path: "/dashboard/tasks/reset", body: EmptyRequest(), response: DailyTaskSnapshot.self)
+    }
+
+    private func get<Response: Decodable>(path: String, response: Response.Type) async throws -> Response {
+        let (data, urlResponse) = try await URLSession.shared.data(from: baseURL.appendingPathComponent(path))
+        guard let httpResponse = urlResponse as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw EngineClientError.requestFailed(String(data: data, encoding: .utf8) ?? "Request failed")
+        }
+        return try JSONDecoder().decode(Response.self, from: data)
     }
 
     private func request<Request: Encodable, Response: Decodable>(path: String, body: Request, response: Response.Type) async throws -> Response {
@@ -473,6 +607,39 @@ private struct BrainRequest: Encodable {
 
 private struct BrainPrepareResponse: Decodable {
     var status: String
+}
+
+private struct CalendarInferRequest: Encodable {
+    var title: String
+    var transcript: String
+    var spoken: String
+    var connectorContext: String
+}
+
+private struct CalendarCreateRequest: Encodable {
+    var event: CalendarEventDraft
+}
+
+private struct CalendarCreateResponse: Decodable {
+    var event: CalendarEventDraft
+}
+
+private struct MCPAuthRequest: Encodable {
+    var accessToken: String
+}
+
+private struct MCPAuthenticateRequest: Encodable {
+    var id: String
+    var url: String
+    var auth: MCPAuthRequest
+}
+
+private struct MCPAuthenticateResponse: Decodable {
+    var connector: MCPConnector
+}
+
+private struct DailyTaskAddRequest: Encodable {
+    var title: String
 }
 
 private struct ErrorResponse: Decodable {
@@ -570,6 +737,18 @@ public final class StudioModel {
     public var brainConfig = BrainConfig()
     public let brainCatalog = BrainCatalog()
     public var brainStatus = "Ready"
+    public var calendarDrafts: [CalendarEventDraft] = []
+    public var calendarEvents: [CalendarEventDraft] = []
+    public var calendarContext = ""
+    public var calendarStatus = "Ready"
+    public var mcpConnectors: [MCPConnector] = []
+    public var selectedMCPConnectorID = "google-workspace"
+    public var mcpConnectorURL = ""
+    public var mcpAccessToken = ""
+    public var mcpStatus = "Ready"
+    public var dailyTasks = DailyTaskSnapshot.empty
+    public var dailyTaskTitle = ""
+    public var dailyTaskStatus = "Ready"
     private let engineClient: any WorkflowEngineClientProtocol
     private var scheduleTimer: Timer?
     private var lastScheduleRuns: [String: Date] = [:]
@@ -966,6 +1145,147 @@ public final class StudioModel {
 
     public func completeWithNex(_ prompt: String) async throws -> String {
         try await engineClient.completeWithNex(prompt: prompt, brain: brainConfig)
+    }
+
+    public func refreshCalendar() async {
+        do {
+            calendarEvents = try await engineClient.listCalendarEvents()
+            calendarStatus = "Loaded"
+        } catch {
+            calendarStatus = error.localizedDescription
+        }
+    }
+
+    public func inferCalendarFromPrompt() {
+        Task { await inferCalendarFromPromptNow() }
+    }
+
+    public func inferCalendarFromPromptNow() async {
+        let context = [prompt, calendarContext].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.joined(separator: "\n\n")
+        guard !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            calendarStatus = "Add context first"
+            return
+        }
+        calendarStatus = "Inferring"
+        do {
+            let inference = try await engineClient.inferCalendar(title: "Nexus calendar", transcript: context, spoken: prompt, connectorContext: calendarContext)
+            calendarDrafts = inference.events
+            calendarStatus = "\(inference.events.count) draft(s)"
+            log(node: "Calendar", message: "Inferred \(inference.events.count) event draft(s)", status: .success)
+        } catch {
+            calendarStatus = error.localizedDescription
+            log(node: "Calendar", message: error.localizedDescription, status: .blocked)
+        }
+    }
+
+    public func createCalendarDraft(_ draft: CalendarEventDraft) {
+        Task {
+            do {
+                let event = try await engineClient.createCalendarEvent(draft)
+                calendarEvents.insert(event, at: 0)
+                calendarDrafts.removeAll(where: { $0.id == draft.id })
+                calendarStatus = event.status ?? "Created"
+            } catch {
+                calendarStatus = error.localizedDescription
+            }
+        }
+    }
+
+    public func resetCalendarHard() {
+        calendarDrafts = []
+        calendarEvents = []
+        Task {
+            try? await engineClient.resetCalendar()
+            await refreshCalendar()
+        }
+    }
+
+    public func refreshMCPConnectors() async {
+        do {
+            mcpConnectors = try await engineClient.listMCPConnectors()
+            if let selected = mcpConnectors.first(where: { $0.id == selectedMCPConnectorID }) {
+                mcpConnectorURL = selected.url
+            }
+            mcpStatus = "Loaded"
+        } catch {
+            mcpStatus = error.localizedDescription
+        }
+    }
+
+    public func selectMCPConnector(_ id: String) {
+        selectedMCPConnectorID = id
+        if let selected = mcpConnectors.first(where: { $0.id == id }) {
+            mcpConnectorURL = selected.url
+        }
+    }
+
+    public func authenticateSelectedMCPConnector() {
+        let id = selectedMCPConnectorID
+        let url = mcpConnectorURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = mcpAccessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !url.isEmpty else {
+            mcpStatus = "MCP URL required"
+            return
+        }
+        mcpStatus = "Authenticating"
+        Task {
+            do {
+                let connector = try await engineClient.authenticateMCPConnector(id: id, url: url, accessToken: token)
+                if let index = mcpConnectors.firstIndex(where: { $0.id == connector.id }) {
+                    mcpConnectors[index] = connector
+                }
+                mcpAccessToken = ""
+                mcpStatus = connector.authenticated ? "Authenticated" : "Registered"
+            } catch {
+                mcpStatus = error.localizedDescription
+            }
+        }
+    }
+
+    public func refreshDailyTasks() async {
+        do {
+            dailyTasks = try await engineClient.listDailyTasks()
+            dailyTaskStatus = "Loaded"
+        } catch {
+            dailyTaskStatus = error.localizedDescription
+        }
+    }
+
+    public func addDailyTask() {
+        let title = dailyTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        dailyTaskTitle = ""
+        Task {
+            do {
+                dailyTasks = try await engineClient.addDailyTask(title: title)
+                dailyTaskStatus = "Added"
+            } catch {
+                dailyTaskStatus = error.localizedDescription
+            }
+        }
+    }
+
+    public func toggleDailyTask(_ task: DailyTask) {
+        Task {
+            do {
+                dailyTasks = try await engineClient.toggleDailyTask(id: task.id)
+                dailyTaskStatus = "Updated"
+            } catch {
+                dailyTaskStatus = error.localizedDescription
+            }
+        }
+    }
+
+    public func resetDailyTasksHard() {
+        dailyTasks = .empty
+        Task {
+            do {
+                dailyTasks = try await engineClient.resetDailyTasks()
+                dailyTaskStatus = "Reset"
+            } catch {
+                dailyTaskStatus = error.localizedDescription
+            }
+        }
     }
 
     private func log(node: String, message: String, status: NodeStatus) {

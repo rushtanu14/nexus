@@ -24,12 +24,17 @@ struct ContentView: View {
             await model.refreshSavedNodes()
             await model.refreshSavedWorkflows()
             await model.refreshBrain()
+            await model.refreshCalendar()
+            await model.refreshMCPConnectors()
+            await model.refreshDailyTasks()
         }
         .onChange(of: nexVoice.requestedSection) { _, section in
             guard let section else { return }
             switch section {
             case "echo": selectedSection = .echo
             case "brain": selectedSection = .brain
+            case "calendar": selectedSection = .calendar
+            case "connectors": selectedSection = .connectors
             case "hub": selectedSection = .hub
             default: selectedSection = .workflows
             }
@@ -46,7 +51,9 @@ struct ContentView: View {
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
             VStack(spacing: 0) {
-                TitleBar(model: model) {
+                TitleBar(model: model, openConnectors: {
+                    selectedSection = .connectors
+                }) {
                     walkthroughStepIndex = 0
                     walkthroughOpen = true
                 }
@@ -60,6 +67,10 @@ struct ContentView: View {
                         }
                     case .brain:
                         NexBrainSurface(model: model)
+                    case .calendar:
+                        NexusCalendarSurface(model: model)
+                    case .connectors:
+                        MCPConnectorsSurface(model: model)
                     case .echo:
                         NexEchoSurface(model: model, store: echoStore)
                     case .workflows:
@@ -112,11 +123,14 @@ private enum StudioSection: String {
     case hub = "nexus hub"
     case workflows
     case brain = "nex brain"
+    case calendar = "calendar"
+    case connectors = "mcp connectors"
     case echo = "nex echo"
 }
 
 private struct TitleBar: View {
     @Bindable var model: StudioModel
+    var openConnectors: () -> Void
     var onOpenWalkthrough: () -> Void
 
     var body: some View {
@@ -132,6 +146,11 @@ private struct TitleBar: View {
                 Spacer()
                 StatusPill(label: "runner", value: model.runnerStatus, color: StudioPalette.accent)
                 StatusPill(label: "permissions", value: model.workflow.accessibilityRequested ? "requested" : "local", color: model.workflow.accessibilityRequested ? StudioPalette.amber : StudioPalette.accent)
+                Button(action: openConnectors) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                }
+                .buttonStyle(IconButtonStyle())
+                .help("Manage MCP connectors")
                 Button(action: onOpenWalkthrough) {
                     Image(systemName: "questionmark.circle")
                 }
@@ -452,6 +471,12 @@ private struct Sidebar: View {
                 SidebarButton(icon: "brain.head.profile", label: "nex brain", active: selectedSection == .brain, compact: compact) {
                     selectedSection = .brain
                 }
+                SidebarButton(icon: "calendar", label: "calendar", active: selectedSection == .calendar, compact: compact) {
+                    selectedSection = .calendar
+                }
+                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "mcp connectors", active: selectedSection == .connectors, compact: compact) {
+                    selectedSection = .connectors
+                }
                 SidebarButton(icon: "waveform", label: "nex echo", active: selectedSection == .echo, compact: compact) {
                     selectedSection = .echo
                 }
@@ -519,6 +544,11 @@ private struct NexusHubSurface: View {
                         HubEchoCard(session: echo) {
                             echoStore.requestDashboard()
                         }
+                    }
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 310), spacing: 14)], spacing: 14) {
+                        HubCalendarWidget(model: model)
+                        HubDailyTaskWidget(model: model)
                     }
 
                     if model.savedWorkflows.isEmpty {
@@ -662,6 +692,117 @@ private struct HubEchoCard: View {
         .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
+    }
+}
+
+private struct HubCalendarWidget: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Calendar", systemImage: "calendar")
+                    .font(StudioType.cardTitle)
+                Spacer()
+                Button(action: model.inferCalendarFromPrompt) {
+                    Image(systemName: "wand.and.sparkles")
+                }
+                .buttonStyle(IconButtonStyle())
+                .help("Infer calendar drafts")
+                Button(action: model.resetCalendarHard) {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(IconButtonStyle())
+                .help("Hard reset calendar drafts and saved events")
+            }
+            Text(model.calendarStatus)
+                .font(StudioType.metadata)
+                .foregroundStyle(StudioPalette.accentBright)
+            ForEach(model.calendarDrafts.prefix(2)) { draft in
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(draft.title)
+                            .font(StudioType.secondary.weight(.semibold))
+                            .lineLimit(1)
+                        Text("\(draft.dateText) \(draft.timeText)")
+                            .font(StudioType.metadata)
+                            .foregroundStyle(StudioPalette.muted)
+                    }
+                    Spacer()
+                    Button(action: { model.createCalendarDraft(draft) }) {
+                        Image(systemName: "plus.circle")
+                    }
+                    .buttonStyle(IconButtonStyle())
+                    .help("Create event through Calendar MCP")
+                }
+                .padding(10)
+                .background(StudioPalette.panelStrong)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+            if model.calendarDrafts.isEmpty {
+                Text(model.calendarEvents.isEmpty ? "No calendar drafts yet." : "\(model.calendarEvents.count) saved event(s).")
+                    .font(StudioType.secondary)
+                    .foregroundStyle(StudioPalette.muted)
+            }
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+    }
+}
+
+private struct HubDailyTaskWidget: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Daily Tasks", systemImage: "checklist")
+                    .font(StudioType.cardTitle)
+                Spacer()
+                Button(action: model.resetDailyTasksHard) {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(IconButtonStyle())
+                .help("Hard reset daily tasks")
+            }
+            HStack {
+                TextField("add task", text: $model.dailyTaskTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(model.addDailyTask)
+                Button(action: model.addDailyTask) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(IconButtonStyle())
+            }
+            ForEach(model.dailyTasks.tasks.prefix(5)) { task in
+                Button {
+                    model.toggleDailyTask(task)
+                } label: {
+                    HStack {
+                        Image(systemName: task.status == "done" ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(task.status == "done" ? StudioPalette.accentBright : StudioPalette.muted)
+                        Text(task.title)
+                            .strikethrough(task.status == "done")
+                            .foregroundStyle(task.status == "done" ? StudioPalette.muted : StudioPalette.text)
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .font(StudioType.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Text(model.dailyTaskStatus)
+                .font(StudioType.metadata)
+                .foregroundStyle(StudioPalette.muted)
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
     }
 }
 
@@ -1241,6 +1382,210 @@ private extension NSImage {
     static func mcpLogo(named name: String) -> NSImage? {
         guard let url = Bundle.module.url(forResource: name, withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
+    }
+}
+
+private struct NexusCalendarSurface: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Calendar")
+                                .font(StudioType.pageTitle)
+                            Text("Infer schedules from transcripts, spoken requests, and connector sync context.")
+                                .font(StudioType.body)
+                                .foregroundStyle(StudioPalette.muted)
+                        }
+                        Spacer()
+                        Button("hard reset", action: model.resetCalendarHard)
+                            .buttonStyle(SecondaryButtonStyle())
+                        Button("infer schedule", action: model.inferCalendarFromPrompt)
+                            .buttonStyle(PrimaryButtonStyle())
+                    }
+
+                    BrainField(title: "Connector sync context") {
+                        TextEditor(text: $model.calendarContext)
+                            .font(StudioType.code)
+                            .frame(minHeight: 120)
+                            .scrollContentBackground(.hidden)
+                            .padding(10)
+                            .background(StudioPalette.panelStrong)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    Text(model.calendarStatus)
+                        .font(StudioType.metadata)
+                        .foregroundStyle(StudioPalette.accentBright)
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 14)], spacing: 14) {
+                        ForEach(model.calendarDrafts) { draft in
+                            CalendarDraftCard(draft: draft) {
+                                model.createCalendarDraft(draft)
+                            }
+                        }
+                        ForEach(model.calendarEvents) { event in
+                            CalendarDraftCard(draft: event, create: nil)
+                        }
+                    }
+                }
+                .padding(24)
+            }
+        }
+        .frame(minWidth: 760)
+        .task { await model.refreshCalendar() }
+    }
+}
+
+private struct CalendarDraftCard: View {
+    var draft: CalendarEventDraft
+    var create: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                Label(draft.status ?? "draft", systemImage: draft.status == "created" ? "checkmark.circle.fill" : "calendar.badge.plus")
+                    .font(StudioType.metadata)
+                    .foregroundStyle(StudioPalette.accentBright)
+                Spacer()
+                if let create {
+                    Button(action: create) {
+                        Label("create", systemImage: "plus")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+            }
+            Text(draft.title)
+                .font(StudioType.cardTitle)
+                .lineLimit(2)
+            Text("\(draft.dateText) \(draft.timeText)")
+                .font(StudioType.secondary.weight(.medium))
+                .foregroundStyle(StudioPalette.text)
+            Text(draft.source)
+                .font(StudioType.secondary)
+                .foregroundStyle(StudioPalette.muted)
+                .lineLimit(3)
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+    }
+}
+
+private struct MCPConnectorsSurface: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        ReactiveBackgroundContainer(color: StudioPalette.canvas) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("MCP Connectors")
+                                .font(StudioType.pageTitle)
+                            Text("Authenticate registry connectors so generated MCP workflows can run locally.")
+                                .font(StudioType.body)
+                                .foregroundStyle(StudioPalette.muted)
+                        }
+                        Spacer()
+                        Button {
+                            Task { await model.refreshMCPConnectors() }
+                        } label: {
+                            Label("refresh", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                    }
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        BrainField(title: "Registry connector") {
+                            Picker("Connector", selection: Binding(
+                                get: { model.selectedMCPConnectorID },
+                                set: { model.selectMCPConnector($0) }
+                            )) {
+                                ForEach(model.mcpConnectors) { connector in
+                                    Text(connector.name).tag(connector.id)
+                                }
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 360, alignment: .leading)
+                        }
+                        BrainField(title: "MCP server URL") {
+                            TextField("http://127.0.0.1:3333/mcp", text: $model.mcpConnectorURL)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        BrainField(title: "Access token") {
+                            SecureField("OAuth or bearer token", text: $model.mcpAccessToken)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        HStack {
+                            Button("authenticate connector", action: model.authenticateSelectedMCPConnector)
+                                .buttonStyle(PrimaryButtonStyle())
+                            Text(model.mcpStatus)
+                                .font(StudioType.metadata)
+                                .foregroundStyle(StudioPalette.accentBright)
+                        }
+                    }
+                    .padding(18)
+                    .background(StudioPalette.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
+                        ForEach(model.mcpConnectors) { connector in
+                            MCPConnectorCard(connector: connector) {
+                                model.selectMCPConnector(connector.id)
+                            }
+                        }
+                    }
+                }
+                .padding(24)
+            }
+        }
+        .frame(minWidth: 760)
+        .task { await model.refreshMCPConnectors() }
+    }
+}
+
+private struct MCPConnectorCard: View {
+    var connector: MCPConnector
+    var select: () -> Void
+
+    var body: some View {
+        Button(action: select) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(connector.name)
+                        .font(StudioType.cardTitle)
+                    Spacer()
+                    Image(systemName: connector.authenticated ? "checkmark.seal.fill" : "key")
+                        .foregroundStyle(connector.authenticated ? StudioPalette.accentBright : StudioPalette.amber)
+                }
+                Text(connector.description)
+                    .font(StudioType.secondary)
+                    .foregroundStyle(StudioPalette.muted)
+                    .lineLimit(3)
+                Text(connector.url.isEmpty ? connector.status : connector.url)
+                    .font(StudioType.metadata)
+                    .foregroundStyle(StudioPalette.accentBright)
+                    .lineLimit(1)
+                Text(connector.tools.prefix(3).joined(separator: " / "))
+                    .font(StudioType.metadata)
+                    .foregroundStyle(StudioPalette.muted)
+                    .lineLimit(1)
+            }
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(StudioPalette.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+        }
+        .buttonStyle(.plain)
     }
 }
 
