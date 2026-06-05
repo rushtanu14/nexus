@@ -8,7 +8,7 @@ import { ActionInferrer } from "../src/echo/ActionInferrer.js";
 import { configureGenerator, generateNode, getGenerationCount, resetGenerationCount } from "../src/generator.js";
 import { createLifePlan } from "../src/life-assistant.js";
 import { createMemoryStore } from "../src/memory-store.js";
-import { clearServers, registerServer, scrapeServer } from "../src/mcp-registry.js";
+import { clearServers, configureConnector, registerServer, scrapeServer } from "../src/mcp-registry.js";
 import { validateNode, validateSchema } from "../src/node-schema.js";
 import { clearNodes, findNode, saveNode } from "../src/node-store.js";
 import { PetSpawner } from "../src/pets/PetSpawner.js";
@@ -125,6 +125,40 @@ test("mcp: register server produces valid nodes", async () => {
     assert(nodes.length > 0);
     assert(nodes.every((node) => validateSchema(node)));
     assert(nodes.every((node) => node.mcp !== null));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("mcp: authenticated registry connector is used by named MCP calls", async () => {
+  let receivedAuth = "";
+  const server = http.createServer(async (request, response) => {
+    receivedAuth = request.headers.authorization ?? "";
+    const body = await readJsonBody(request);
+    response.setHeader("content-type", "application/json");
+    if (body.method === "tools/list") {
+      response.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { tools: [{
+        name: "create_calendar_event",
+        description: "Create an event",
+        inputSchema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] }
+      }] } }));
+      return;
+    }
+    response.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { ok: true, arguments: body.params.arguments } }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    await registerAuthenticatedConnector(`http://127.0.0.1:${port}`);
+    const result = await executeNode({
+      id: crypto.randomUUID(),
+      meta: { app: "Google Workspace", category: "mcp", action: "create_calendar_event", label: "Create event", source: "mcp" },
+      fields: [],
+      runner: { steps: [{ primitive: "mcp_call", args: { server: "google-workspace", tool: "create_calendar_event", inputs: { title: "Planning sync" } } }], output_binding: null },
+      mcp: { server: "google-workspace", tool: "create_calendar_event" }
+    }, {});
+    assert.equal(result.output.ok, true);
+    assert.equal(receivedAuth, "Bearer test-token");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -483,6 +517,45 @@ test("api: echo action run reports missing MCP registration", async () => {
   }
 });
 
+test("api: calendar infer creates MCP-backed schedule drafts", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/calendar/infer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "Design sync",
+        transcript: "Next meeting is June 8, 2026 at 2:30 PM. I need to send the recap by tomorrow.",
+        spoken: "Create a calendar event from this sync up."
+      })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert(payload.events.some((event) => event.dateText === "June 8, 2026"));
+    assert(payload.actions.some((action) => action.provider === "Google Workspace" || action.provider === "MCP Workflow"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("api: daily dashboard tasks toggle done tasks to the bottom and reset", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const first = await postJson(`http://127.0.0.1:${port}/dashboard/tasks/add`, { title: "Review calendar" });
+    await postJson(`http://127.0.0.1:${port}/dashboard/tasks/add`, { title: "Send recap" });
+    const toggled = await postJson(`http://127.0.0.1:${port}/dashboard/tasks/toggle`, { id: first.tasks[0].id });
+    assert.equal(toggled.tasks.at(-1).status, "done");
+    const reset = await postJson(`http://127.0.0.1:${port}/dashboard/tasks/reset`, {});
+    assert.equal(reset.tasks.length, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("api: Nex completion uses and updates local memory", async () => {
   const qdrant = await startFakeQdrant();
   let receivedMessages = [];
@@ -697,6 +770,24 @@ function fixtureNode({ action, fields, steps, output_binding = null }) {
 
 function fixtureField(id, value, required = true) {
   return { id, type: "string", required, label: id, value };
+}
+
+async function registerAuthenticatedConnector(url) {
+  return configureConnector({
+    id: "google-workspace",
+    url,
+    auth: { accessToken: "test-token" }
+  });
+}
+
+async function postJson(url, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  assert.equal(response.status, 200);
+  return response.json();
 }
 
 async function startFakeQdrant() {

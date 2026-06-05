@@ -6,11 +6,13 @@ import express from "express";
 import { NexAssistant } from "./assistant/NexAssistant.js";
 import { ActionInferrer } from "./echo/ActionInferrer.js";
 import { buildEchoActions, runEchoAction } from "./echo-actions.js";
+import { createCalendarEvent, inferSchedule, listCalendarEvents, resetCalendar } from "./calendar-store.js";
+import { addDailyTask, listDailyTasks, resetDailyTasks, toggleDailyTask } from "./daily-task-store.js";
 import { executeNode } from "./executor.js";
 import { generateNode, OLLAMA_BASE_URL, OLLAMA_MODEL } from "./generator.js";
 import { createLifePlan } from "./life-assistant.js";
 import { createMemoryStore } from "./memory-store.js";
-import { listServers, registerServer, scrapeServer } from "./mcp-registry.js";
+import { authenticateConnector, configureConnector, listConnectors, listServers, registerServer, scrapeServer } from "./mcp-registry.js";
 import { clearNodes, deleteNode, listNodes, saveNode } from "./node-store.js";
 import { PetSpawner } from "./pets/PetSpawner.js";
 import { actionStore } from "./store/ActionStore.js";
@@ -36,7 +38,10 @@ export function createApp() {
         echoMCPWorkflows: true,
         echoRealtime: true,
         echoPets: true,
-        echoAssistantQueue: true
+        echoAssistantQueue: true,
+        calendarSchedules: true,
+        mcpConnectorAuth: true,
+        dailyDashboardTasks: true
       }
     });
   }));
@@ -166,6 +171,45 @@ export function createApp() {
     });
     response.json(result);
   }));
+  app.get("/calendar/events", asyncRoute(async (_request, response) => {
+    response.json({ events: await listCalendarEvents() });
+  }));
+  app.post("/calendar/infer", asyncRoute(async (request, response) => {
+    const schedule = await inferSchedule({
+      title: request.body.title,
+      transcript: request.body.transcript,
+      spoken: request.body.spoken ?? request.body.message,
+      connectorContext: request.body.connectorContext ?? request.body.connectors
+    });
+    await optionalRemember({
+      memory_type: "workflow",
+      content: `Inferred ${schedule.events.length} calendar event(s) for "${schedule.title}". Brief: ${schedule.brief}`,
+      source: "calendar/infer",
+      importance: schedule.events.length > 0 ? 0.55 : 0.3,
+      project: request.body.project ?? "nexus",
+      tags: ["calendar", "schedule", "mcp"]
+    });
+    response.json(schedule);
+  }));
+  app.post("/calendar/event/create", asyncRoute(async (request, response) => {
+    const event = await createCalendarEvent(request.body.event ?? request.body, { autoRun: request.body.autoRun !== false });
+    response.json({ ok: event.status === "created" || event.status === "ready", event });
+  }));
+  app.post("/calendar/reset", asyncRoute(async (_request, response) => {
+    response.json(await resetCalendar());
+  }));
+  app.get("/dashboard/tasks", asyncRoute(async (_request, response) => {
+    response.json(await listDailyTasks());
+  }));
+  app.post("/dashboard/tasks/add", asyncRoute(async (request, response) => {
+    response.json(await addDailyTask(request.body.title));
+  }));
+  app.post("/dashboard/tasks/toggle", asyncRoute(async (request, response) => {
+    response.json(await toggleDailyTask(request.body.id));
+  }));
+  app.post("/dashboard/tasks/reset", asyncRoute(async (_request, response) => {
+    response.json(await resetDailyTasks({ hard: true }));
+  }));
   app.get("/memory/health", asyncRoute(async (_request, response) => {
     response.json(await createMemoryStore().health());
   }));
@@ -216,6 +260,33 @@ export function createApp() {
       tags: ["mcp", "automation"]
     });
     response.json({ found: (await scrapeServer(request.body.app)).length });
+  }));
+  app.get("/mcp/registry", asyncRoute(async (_request, response) => {
+    response.json({ connectors: await listConnectors() });
+  }));
+  app.post("/mcp/configure", asyncRoute(async (request, response) => {
+    const connector = await configureConnector(request.body);
+    await optionalRemember({
+      memory_type: "automation",
+      content: `Configured MCP connector ${connector.app} at ${connector.url}.`,
+      source: "mcp/configure",
+      importance: 0.45,
+      project: request.body.project ?? "nexus",
+      tags: ["mcp", "connector", "auth"]
+    });
+    response.json({ ok: true, connector });
+  }));
+  app.post("/mcp/authenticate", asyncRoute(async (request, response) => {
+    const connector = await authenticateConnector(request.body);
+    await optionalRemember({
+      memory_type: "automation",
+      content: `Authenticated MCP connector ${connector.app}.`,
+      source: "mcp/authenticate",
+      importance: 0.55,
+      project: request.body.project ?? "nexus",
+      tags: ["mcp", "connector", "auth"]
+    });
+    response.json({ ok: true, connector });
   }));
   app.get("/mcp/list", asyncRoute(async (_request, response) => {
     response.json(await listServers());
