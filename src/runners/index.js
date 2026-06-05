@@ -1,6 +1,7 @@
 import { exec, execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import { promisify } from "node:util";
+import { callRegisteredTool, resolveServer } from "../mcp-registry.js";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -84,6 +85,8 @@ async function httpRequest({ url, method, body }) {
 
 async function mcpCall({ server, tool, inputs }) {
   if (adapters.mcp?.call) return adapters.mcp.call(server, tool, inputs);
+  const registered = resolveServer(server);
+  if (registered) return callRegisteredTool(server, tool, inputs);
   const response = await fetch(server, {
     method: "POST",
     headers: { "content-type": "application/json" },

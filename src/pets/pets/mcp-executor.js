@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { listServers } from "../../mcp-registry.js";
+import { callRegisteredTool, listServers } from "../../mcp-registry.js";
 
 export async function runWithPetPackageOrMcp({ packageNames, mcpServerNames, action, signal, progress, authLabel }) {
   progress?.(`loading ${packageNames[0]} pet`);
@@ -29,7 +29,7 @@ export async function runWithPetPackageOrMcp({ packageNames, mcpServerNames, act
   }
 
   progress?.(`calling ${serverName} MCP`);
-  return callMcpTool(servers[serverName], action.mcp?.tool ?? action.tool, action.params ?? action.mcp?.inputs ?? {}, signal);
+  return callRegisteredTool(serverName, action.mcp?.tool ?? action.tool, action.params ?? action.mcp?.inputs ?? {}, signal);
 }
 
 async function firstImport(names) {
