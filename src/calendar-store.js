@@ -44,10 +44,11 @@ export async function resetCalendar() {
 
 export async function inferSchedule({ transcript = "", spoken = "", connectorContext = "", title = "Nexus schedule" } = {}) {
   const connectorText = typeof connectorContext === "string" ? connectorContext : JSON.stringify(connectorContext, null, 2);
-  const sourceText = [title, connectorText, spoken, transcript].filter(Boolean).join("\n\n");
+  const liveConnectorText = await connectorScheduleContext();
+  const sourceText = [title, connectorText, liveConnectorText, spoken, transcript].filter(Boolean).join("\n\n");
   if (!sourceText.trim()) throw new Error("calendar context is required");
   const plan = createLifePlan(sourceText);
-  const echoActions = buildEchoActions({ title, transcript, notes: [spoken, connectorText].filter(Boolean).join("\n\n") });
+  const echoActions = buildEchoActions({ title, transcript, notes: [spoken, connectorText, liveConnectorText].filter(Boolean).join("\n\n") });
   const calendarActions = echoActions.filter((action) => action.mcp?.server === "google-workspace" || action.mcp?.steps?.some((step) => step.server === "google-workspace"));
   const events = [];
   if (plan.nextMeeting) {
@@ -76,7 +77,13 @@ export async function inferSchedule({ transcript = "", spoken = "", connectorCon
     brief: plan.brief,
     tasks: plan.tasks,
     events: dedupeEvents(events).slice(0, 8),
-    actions: calendarActions
+    actions: calendarActions,
+    agents: [
+      { name: "memory-context-agent", status: transcript.includes("Relevant local memory") ? "used" : "available" },
+      { name: "connector-sync-agent", status: liveConnectorText ? "used" : "no-registered-schedule-tools" },
+      { name: "transcript-task-agent", status: `${plan.tasks.length} task(s)` },
+      { name: "calendar-mcp-agent", status: `${calendarActions.length} calendar action(s)` }
+    ]
   };
 }
 
@@ -142,4 +149,23 @@ function fromRecord(record) {
     createdAt: record.created_at,
     result: record.result_json ? JSON.parse(record.result_json) : null
   };
+}
+
+async function connectorScheduleContext() {
+  const servers = await listServers();
+  const probes = [
+    ["google-workspace", "list_calendar_events", { range: "upcoming" }],
+    ["notion", "list_tasks", { status: "open" }],
+    ["google-drive", "search_docs", { query: "meeting notes action items" }]
+  ].filter(([server]) => servers[server]);
+  const sections = [];
+  for (const [server, tool, inputs] of probes) {
+    try {
+      const result = await callRegisteredTool(server, tool, inputs);
+      sections.push(`${server}/${tool}:\n${JSON.stringify(result, null, 2)}`);
+    } catch {
+      // Connector sync is opportunistic; unavailable optional tools should not block schedule inference.
+    }
+  }
+  return sections.join("\n\n");
 }

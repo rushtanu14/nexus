@@ -280,6 +280,10 @@ function inferAttendees(context) {
 
 function inferWhen(context) {
   const lower = context.toLowerCase();
+  const monthDate = context.match(/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2},\s+\d{4}\b/i);
+  if (monthDate) return monthDate[0];
+  const iso = context.match(/\b\d{4}-\d{2}-\d{2}\b/);
+  if (iso) return iso[0];
   if (lower.includes("tomorrow")) return "tomorrow";
   const nextWeek = context.match(/\bnext\s+(week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i);
   if (nextWeek) return nextWeek[0];

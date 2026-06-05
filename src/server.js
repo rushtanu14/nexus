@@ -175,11 +175,20 @@ export function createApp() {
     response.json({ events: await listCalendarEvents() });
   }));
   app.post("/calendar/infer", asyncRoute(async (request, response) => {
+    const rawContext = [
+      request.body.transcript,
+      request.body.spoken ?? request.body.message,
+      typeof request.body.connectorContext === "string" ? request.body.connectorContext : JSON.stringify(request.body.connectorContext ?? request.body.connectors ?? "")
+    ].filter(Boolean).join("\n\n");
+    const memory = await optionalMemoryContext(rawContext, { project: request.body.project ?? "nexus", source: "calendar/infer" });
     const schedule = await inferSchedule({
       title: request.body.title,
       transcript: request.body.transcript,
       spoken: request.body.spoken ?? request.body.message,
-      connectorContext: request.body.connectorContext ?? request.body.connectors
+      connectorContext: [
+        request.body.connectorContext ?? request.body.connectors,
+        memory.context ? `Relevant local memory:\n${memory.context}` : ""
+      ].filter(Boolean).join("\n\n")
     });
     await optionalRemember({
       memory_type: "workflow",
@@ -189,7 +198,7 @@ export function createApp() {
       project: request.body.project ?? "nexus",
       tags: ["calendar", "schedule", "mcp"]
     });
-    response.json(schedule);
+    response.json({ ...schedule, memory_status: memory.status });
   }));
   app.post("/calendar/event/create", asyncRoute(async (request, response) => {
     const event = await createCalendarEvent(request.body.event ?? request.body, { autoRun: request.body.autoRun !== false });
@@ -227,6 +236,11 @@ export function createApp() {
     if (!prompt.trim()) throw new Error("prompt is required");
     const project = request.body.project ?? "nexus";
     const memory = await optionalMemoryContext(prompt, { project, source: "nex/complete" });
+    const toolResult = await maybeHandleNexToolCommand(prompt, { project, memoryContext: memory.context });
+    if (toolResult) {
+      response.json({ completion: toolResult, memory_status: memory.status, tool_used: true });
+      return;
+    }
     const completion = await completeWithNex(prompt, request.body.brain ?? {}, memory.context);
     await optionalRemember({
       memory_type: "prior_conversation",
@@ -351,6 +365,56 @@ function memoryText(value, maxLength = 2400) {
   return `${text.slice(0, maxLength - 20).trim()}... [truncated]`;
 }
 
+async function maybeHandleNexToolCommand(prompt, { project, memoryContext }) {
+  const text = String(prompt ?? "").trim();
+  const lower = text.toLowerCase();
+  if (/\b(calendar|schedule|meeting|invite|event)\b/.test(lower) && /\b(add|create|schedule|book|infer|put|plan)\b/.test(lower)) {
+    const schedule = await inferSchedule({
+      title: "Nex calendar command",
+      transcript: text,
+      spoken: text,
+      connectorContext: memoryContext ? `Relevant local memory:\n${memoryContext}` : ""
+    });
+    const created = [];
+    if (/\b(add|create|schedule|book|put)\b/.test(lower)) {
+      for (const event of schedule.events.slice(0, 3)) {
+        created.push(await createCalendarEvent(event, { autoRun: true }));
+      }
+    }
+    await optionalRemember({
+      memory_type: "automation",
+      content: `Nex handled a calendar command with ${schedule.events.length} inferred event(s) and ${created.length} created event(s).`,
+      source: "nex/calendar-tool",
+      importance: 0.55,
+      project,
+      tags: ["nex", "calendar", "tool"]
+    });
+    const lines = [
+      `Calendar tool used. Inferred ${schedule.events.length} schedule item(s).`,
+      created.length ? `Created or queued ${created.length} event(s):` : "No events were created because this was an infer-only request.",
+      ...created.map((event) => `- ${event.title} — ${event.dateText} ${event.timeText} (${event.status})`),
+      !created.length ? schedule.events.map((event) => `- ${event.title} — ${event.dateText} ${event.timeText}`).join("\n") : ""
+    ].filter(Boolean);
+    return lines.join("\n");
+  }
+
+  if (/\b(task|todo|daily)\b/.test(lower) && /\b(add|create|list|show|reset|clear)\b/.test(lower)) {
+    if (/\b(reset|clear)\b/.test(lower)) {
+      const snapshot = await resetDailyTasks({ hard: true });
+      return `Daily tasks reset. ${snapshot.tasks.length} task(s) remain.`;
+    }
+    const title = text.replace(/^(add|create)\s+/i, "").replace(/\b(to|into)?\s*(daily tasks?|todo list)\b/ig, "").trim();
+    if (/\b(add|create)\b/.test(lower) && title) {
+      const snapshot = await addDailyTask(title);
+      return `Added daily task. Current list:\n${snapshot.tasks.map((task) => `- ${task.status === "done" ? "[x]" : "[ ]"} ${task.title}`).join("\n")}`;
+    }
+    const snapshot = await listDailyTasks();
+    return `Daily tasks:\n${snapshot.tasks.map((task) => `- ${task.status === "done" ? "[x]" : "[ ]"} ${task.title}`).join("\n") || "- No tasks yet."}`;
+  }
+
+  return null;
+}
+
 async function completeWithNex(prompt, brain, memoryContext) {
   const provider = brain.provider ?? "ollama";
   const model = brain.model || OLLAMA_MODEL;
@@ -362,16 +426,16 @@ async function completeWithNex(prompt, brain, memoryContext) {
 
   if (provider === "ollama") {
     const baseUrl = ollamaBaseUrl(brain.baseUrl);
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
-      signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000))
-    });
-    if (!response.ok) throw new Error(`Nex model request failed with HTTP ${response.status}: ${await response.text()}`);
-    const payload = await response.json();
-    if (!payload.message?.content) throw new Error("Nex model returned no content");
-    return payload.message.content;
+    const candidates = uniqueModels([model, OLLAMA_MODEL, "qwen2.5-coder:1.5b", "llama3.2:3b", "gemma3:4b"]);
+    const errors = [];
+    for (const candidate of candidates) {
+      try {
+        return await completeWithOllama(baseUrl, candidate, system, prompt);
+      } catch (error) {
+        errors.push(`${candidate}: ${error.message}`);
+      }
+    }
+    throw new Error(`No configured Ollama model could answer. ${errors.join(" | ")}`);
   }
 
   const baseUrl = String(brain.baseUrl || (provider === "lmstudio" ? "http://127.0.0.1:1234/v1" : "https://api.openai.com/v1")).replace(/\/$/, "");
@@ -383,10 +447,37 @@ async function completeWithNex(prompt, brain, memoryContext) {
     body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
     signal: AbortSignal.timeout(Number(process.env.NEXUS_CHAT_TIMEOUT_MS ?? 120000))
   });
-  if (!response.ok) throw new Error(`Nex model request failed with HTTP ${response.status}: ${await response.text()}`);
+  if (!response.ok) throw new Error(`Nex model request failed with HTTP ${response.status}: ${await responseError(response)}`);
   const payload = await response.json();
   if (!payload.choices?.[0]?.message?.content) throw new Error("Nex model returned no content");
   return payload.choices[0].message.content;
+}
+
+async function completeWithOllama(baseUrl, model, system, prompt) {
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+    signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000))
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await responseError(response)}`);
+  const payload = await response.json();
+  if (!payload.message?.content) throw new Error("returned no content");
+  return payload.message.content;
+}
+
+async function responseError(response) {
+  const text = await response.text();
+  try {
+    const payload = JSON.parse(text);
+    return payload.error ?? payload.message ?? text;
+  } catch {
+    return text;
+  }
+}
+
+function uniqueModels(models) {
+  return [...new Set(models.map((candidate) => String(candidate ?? "").trim()).filter(Boolean))];
 }
 
 async function prepareBrain(brain) {
@@ -400,7 +491,7 @@ async function prepareBrain(brain) {
       body: JSON.stringify({ model, stream: false }),
       signal: AbortSignal.timeout(Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000))
     });
-    if (!response.ok) throw new Error(`Ollama could not prepare ${model}: ${await response.text()}`);
+    if (!response.ok) throw new Error(`Ollama could not prepare ${model}: ${await responseError(response)}`);
     return `Prepared ${model} with Ollama`;
   }
   if (provider === "lmstudio") {

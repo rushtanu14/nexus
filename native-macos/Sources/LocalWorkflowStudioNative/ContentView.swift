@@ -52,7 +52,7 @@ struct ContentView: View {
                 .allowsHitTesting(false)
             VStack(spacing: 0) {
                 TitleBar(model: model, openConnectors: {
-                    selectedSection = .connectors
+                    selectedSection = .brain
                 }) {
                     walkthroughStepIndex = 0
                     walkthroughOpen = true
@@ -474,9 +474,6 @@ private struct Sidebar: View {
                 SidebarButton(icon: "calendar", label: "calendar", active: selectedSection == .calendar, compact: compact) {
                     selectedSection = .calendar
                 }
-                SidebarButton(icon: "point.3.connected.trianglepath.dotted", label: "mcp connectors", active: selectedSection == .connectors, compact: compact) {
-                    selectedSection = .connectors
-                }
                 SidebarButton(icon: "waveform", label: "nex echo", active: selectedSection == .echo, compact: compact) {
                     selectedSection = .echo
                 }
@@ -777,7 +774,7 @@ private struct HubDailyTaskWidget: View {
                 }
                 .buttonStyle(IconButtonStyle())
             }
-            ForEach(model.dailyTasks.tasks.prefix(5)) { task in
+            ForEach(model.dailyTasks.tasks) { task in
                 Button {
                     model.toggleDailyTask(task)
                 } label: {
@@ -1387,6 +1384,7 @@ private extension NSImage {
 
 private struct NexusCalendarSurface: View {
     @Bindable var model: StudioModel
+    @State private var displayedMonth = Date()
 
     var body: some View {
         ReactiveBackgroundContainer(color: StudioPalette.canvas) {
@@ -1407,6 +1405,11 @@ private struct NexusCalendarSurface: View {
                             .buttonStyle(PrimaryButtonStyle())
                     }
 
+                    CalendarMonthGrid(
+                        month: $displayedMonth,
+                        items: model.calendarDrafts + model.calendarEvents
+                    )
+
                     BrainField(title: "Connector sync context") {
                         TextEditor(text: $model.calendarContext)
                             .font(StudioType.code)
@@ -1420,6 +1423,26 @@ private struct NexusCalendarSurface: View {
                     Text(model.calendarStatus)
                         .font(StudioType.metadata)
                         .foregroundStyle(StudioPalette.accentBright)
+
+                    if !model.calendarAgents.isEmpty {
+                        HStack(spacing: 8) {
+                            ForEach(model.calendarAgents) { agent in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(agent.name)
+                                        .font(StudioType.metadata.weight(.bold))
+                                    Text(agent.status)
+                                        .font(StudioType.metadata)
+                                        .foregroundStyle(StudioPalette.muted)
+                                        .lineLimit(1)
+                                }
+                                .padding(10)
+                                .background(StudioPalette.panelStrong)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+                            }
+                            Spacer()
+                        }
+                    }
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 14)], spacing: 14) {
                         ForEach(model.calendarDrafts) { draft in
@@ -1437,6 +1460,124 @@ private struct NexusCalendarSurface: View {
         }
         .frame(minWidth: 760)
         .task { await model.refreshCalendar() }
+    }
+}
+
+private struct CalendarMonthGrid: View {
+    @Binding var month: Date
+    var items: [CalendarEventDraft]
+
+    private let calendar = Calendar.current
+    private let columns = Array(repeating: GridItem(.flexible(minimum: 86), spacing: 8), count: 7)
+    private let weekdayLabels = Calendar.current.shortWeekdaySymbols
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button(action: { moveMonth(-1) }) {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(IconButtonStyle())
+                Text(Self.monthFormatter.string(from: month))
+                    .font(StudioType.cardTitle)
+                Button(action: { moveMonth(1) }) {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(IconButtonStyle())
+                Spacer()
+                Text("\(items.count) schedule item(s)")
+                    .font(StudioType.metadata)
+                    .foregroundStyle(StudioPalette.muted)
+            }
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(weekdayLabels, id: \.self) { label in
+                    Text(label)
+                        .font(StudioType.metadata)
+                        .foregroundStyle(StudioPalette.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                ForEach(daysInGrid, id: \.self) { date in
+                    CalendarDayCell(date: date, isCurrentMonth: calendar.isDate(date, equalTo: month, toGranularity: .month), items: itemsFor(date))
+                }
+            }
+        }
+        .padding(15)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+    }
+
+    private var daysInGrid: [Date] {
+        guard let interval = calendar.dateInterval(of: .month, for: month),
+              let firstWeek = calendar.dateInterval(of: .weekOfMonth, for: interval.start),
+              let lastWeek = calendar.dateInterval(of: .weekOfMonth, for: interval.end.addingTimeInterval(-1)) else {
+            return []
+        }
+        var days: [Date] = []
+        var cursor = firstWeek.start
+        while cursor < lastWeek.end {
+            days.append(cursor)
+            cursor = calendar.date(byAdding: .day, value: 1, to: cursor) ?? lastWeek.end
+        }
+        return days
+    }
+
+    private func itemsFor(_ date: Date) -> [CalendarEventDraft] {
+        items.filter { item in
+            guard let itemDate = Self.date(from: item.dateText) else { return false }
+            return calendar.isDate(itemDate, inSameDayAs: date)
+        }
+    }
+
+    private func moveMonth(_ offset: Int) {
+        month = calendar.date(byAdding: .month, value: offset, to: month) ?? month
+    }
+
+    private static let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
+
+    private static func date(from text: String) -> Date? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for format in ["MMMM d, yyyy", "MMM d, yyyy", "yyyy-MM-dd", "M/d/yyyy", "M/d/yy"] {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = format
+            if let date = formatter.date(from: trimmed) { return date }
+        }
+        return nil
+    }
+}
+
+private struct CalendarDayCell: View {
+    var date: Date
+    var isCurrentMonth: Bool
+    var items: [CalendarEventDraft]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("\(Calendar.current.component(.day, from: date))")
+                .font(StudioType.metadata.weight(.bold))
+                .foregroundStyle(isCurrentMonth ? StudioPalette.text : StudioPalette.muted.opacity(0.55))
+            ForEach(items.prefix(3)) { item in
+                Text(item.title)
+                    .font(.system(size: 10).weight(.medium))
+                    .lineLimit(1)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background((item.status == "created" ? StudioPalette.accentBright : StudioPalette.amber).opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .frame(minHeight: 86, alignment: .topLeading)
+        .background(isCurrentMonth ? StudioPalette.panelStrong : StudioPalette.panelStrong.opacity(0.45))
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(items.isEmpty ? StudioPalette.line : StudioPalette.accent.opacity(0.65)))
     }
 }
 
@@ -1680,11 +1821,14 @@ private struct NexBrainSurface: View {
                     .background(StudioPalette.panel)
                     .clipShape(RoundedRectangle(cornerRadius: 3))
                     .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+
+                    MCPConnectorsInlinePanel(model: model)
                 }
                 .padding(24)
             }
         }
         .frame(minWidth: 760)
+        .task { await model.refreshMCPConnectors() }
     }
 
     private var providerDetail: String {
@@ -1693,6 +1837,77 @@ private struct NexBrainSurface: View {
         case "lmstudio": return "Use prepare now to start the LM Studio server, download the selected model if needed, and load it."
         default: return "Paste a model name and key. The endpoint defaults to OpenAI and can be changed for any OpenAI-compatible provider."
         }
+    }
+}
+
+private struct MCPConnectorsInlinePanel: View {
+    @Bindable var model: StudioModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("MCP Connectors")
+                        .font(StudioType.cardTitle)
+                    Text("Connect registry MCPs here so Nex, Echo, calendar, and generated workflows can actually call tools.")
+                        .font(StudioType.secondary)
+                        .foregroundStyle(StudioPalette.muted)
+                }
+                Spacer()
+                Button {
+                    Task { await model.refreshMCPConnectors() }
+                } label: {
+                    Label("refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
+                    BrainField(title: "Registry connector") {
+                        Picker("Connector", selection: Binding(
+                            get: { model.selectedMCPConnectorID },
+                            set: { model.selectMCPConnector($0) }
+                        )) {
+                            ForEach(model.mcpConnectors) { connector in
+                                Text(connector.name).tag(connector.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 360, alignment: .leading)
+                    }
+                    BrainField(title: "MCP server URL") {
+                        TextField("http://127.0.0.1:3333/mcp", text: $model.mcpConnectorURL)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    BrainField(title: "Access token") {
+                        SecureField("OAuth or bearer token", text: $model.mcpAccessToken)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    HStack {
+                        Button("authenticate connector", action: model.authenticateSelectedMCPConnector)
+                            .buttonStyle(PrimaryButtonStyle())
+                        Text(model.mcpStatus)
+                            .font(StudioType.metadata)
+                            .foregroundStyle(StudioPalette.accentBright)
+                    }
+                }
+                .frame(minWidth: 300)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 10)], spacing: 10) {
+                    ForEach(model.mcpConnectors) { connector in
+                        MCPConnectorCard(connector: connector) {
+                            model.selectMCPConnector(connector.id)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
     }
 }
 

@@ -48,10 +48,14 @@ final class EngineProcessManager {
         }
         process.currentDirectoryURL = root
         var environment = ProcessInfo.processInfo.environment
-        environment["NEXUS_NODE_STORE"] = FileManager.default
+        let supportDirectory = FileManager.default
             .homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Nexus/nodes.sqlite")
-            .path
+            .appendingPathComponent("Library/Application Support/Nexus")
+        try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+        environment["NEXUS_NODE_STORE"] = supportDirectory.appendingPathComponent("nodes.sqlite").path
+        environment["NEXUS_MCP_STORE"] = supportDirectory.appendingPathComponent("mcp-connectors.sqlite").path
+        environment["NEXUS_CALENDAR_STORE"] = supportDirectory.appendingPathComponent("calendar.sqlite").path
+        environment["NEXUS_DAILY_TASK_STORE"] = supportDirectory.appendingPathComponent("daily-tasks.sqlite").path
         process.environment = environment
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -162,6 +166,10 @@ final class EngineProcessManager {
               let features = payload["features"] as? [String: Any] else {
             return false
         }
-        return features["echoActions"] as? Bool == true && features["echoRealtime"] as? Bool == true
+        return features["echoActions"] as? Bool == true
+            && features["echoRealtime"] as? Bool == true
+            && features["calendarSchedules"] as? Bool == true
+            && features["mcpConnectorAuth"] as? Bool == true
+            && features["dailyDashboardTasks"] as? Bool == true
     }
 }

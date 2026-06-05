@@ -373,6 +373,14 @@ public struct CalendarInference: Codable, Equatable, Sendable {
     public var title: String
     public var brief: String
     public var events: [CalendarEventDraft]
+    public var agents: [CalendarAgentStatus]?
+}
+
+public struct CalendarAgentStatus: Identifiable, Codable, Equatable, Sendable {
+    public var name: String
+    public var status: String
+
+    public var id: String { name }
 }
 
 public struct CalendarEventsResponse: Codable, Equatable, Sendable {
@@ -473,7 +481,7 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
     }
 
     public func listNodes() async throws -> [ExecutableNode] {
-        let (data, urlResponse) = try await URLSession.shared.data(from: baseURL.appendingPathComponent("/node/list"))
+        let (data, urlResponse) = try await URLSession.shared.data(from: endpointURL("/node/list"))
         guard let httpResponse = urlResponse as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             throw EngineClientError.requestFailed(String(data: data, encoding: .utf8) ?? "Request failed")
         }
@@ -541,7 +549,7 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
     }
 
     private func get<Response: Decodable>(path: String, response: Response.Type) async throws -> Response {
-        let (data, urlResponse) = try await URLSession.shared.data(from: baseURL.appendingPathComponent(path))
+        let (data, urlResponse) = try await URLSession.shared.data(from: endpointURL(path))
         guard let httpResponse = urlResponse as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             throw EngineClientError.requestFailed(String(data: data, encoding: .utf8) ?? "Request failed")
         }
@@ -549,7 +557,7 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
     }
 
     private func request<Request: Encodable, Response: Decodable>(path: String, body: Request, response: Response.Type) async throws -> Response {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        var request = URLRequest(url: endpointURL(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.httpBody = try JSONEncoder().encode(body)
@@ -565,6 +573,10 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
             }
             throw error
         }
+    }
+
+    private func endpointURL(_ path: String) -> URL {
+        baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
     }
 }
 
@@ -739,6 +751,7 @@ public final class StudioModel {
     public var brainStatus = "Ready"
     public var calendarDrafts: [CalendarEventDraft] = []
     public var calendarEvents: [CalendarEventDraft] = []
+    public var calendarAgents: [CalendarAgentStatus] = []
     public var calendarContext = ""
     public var calendarStatus = "Ready"
     public var mcpConnectors: [MCPConnector] = []
@@ -1170,6 +1183,7 @@ public final class StudioModel {
         do {
             let inference = try await engineClient.inferCalendar(title: "Nexus calendar", transcript: context, spoken: prompt, connectorContext: calendarContext)
             calendarDrafts = inference.events
+            calendarAgents = inference.agents ?? []
             calendarStatus = "\(inference.events.count) draft(s)"
             log(node: "Calendar", message: "Inferred \(inference.events.count) event draft(s)", status: .success)
         } catch {
@@ -1254,10 +1268,10 @@ public final class StudioModel {
     public func addDailyTask() {
         let title = dailyTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
-        dailyTaskTitle = ""
         Task {
             do {
                 dailyTasks = try await engineClient.addDailyTask(title: title)
+                dailyTaskTitle = ""
                 dailyTaskStatus = "Added"
             } catch {
                 dailyTaskStatus = error.localizedDescription

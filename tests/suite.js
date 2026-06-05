@@ -222,6 +222,9 @@ test("api: health advertises echo action compatibility", async () => {
     assert.equal(response.status, 200);
     assert.equal(payload.features.echoActions, true);
     assert.equal(payload.features.echoMCPWorkflows, true);
+    assert.equal(payload.features.calendarSchedules, true);
+    assert.equal(payload.features.mcpConnectorAuth, true);
+    assert.equal(payload.features.dailyDashboardTasks, true);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -540,6 +543,39 @@ test("api: calendar infer creates MCP-backed schedule drafts", async () => {
   }
 });
 
+test("api: calendar infer uses registered connector schedule context", async () => {
+  const mcp = http.createServer(async (request, response) => {
+    const body = await readJsonBody(request);
+    response.setHeader("content-type", "application/json");
+    if (body.method === "tools/list") {
+      response.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { tools: [
+        { name: "list_calendar_events", description: "List events", inputSchema: { type: "object", properties: {} } },
+        { name: "create_calendar_event", description: "Create event", inputSchema: { type: "object", properties: { title: { type: "string" } } } }
+      ] } }));
+      return;
+    }
+    response.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { notes: "Next meeting is June 9, 2026 at 1:00 PM. Schedule the roadmap sync." } }));
+  });
+  await new Promise((resolve) => mcp.listen(0, "127.0.0.1", resolve));
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    await configureConnector({ id: "google-workspace", url: `http://127.0.0.1:${mcp.address().port}`, auth: { accessToken: "test-token" } });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/calendar/infer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Roadmap sync", transcript: "Use connector context to infer the schedule." })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert(payload.events.some((event) => event.dateText === "June 9, 2026"));
+    assert(payload.agents.some((agent) => agent.name === "connector-sync-agent" && agent.status === "used"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => mcp.close(resolve));
+  }
+});
+
 test("api: daily dashboard tasks toggle done tasks to the bottom and reset", async () => {
   const server = createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -607,6 +643,64 @@ test("api: Nex completion uses and updates local memory", async () => {
     restoreEnv("NEXUS_QDRANT_URL", previous.qdrant);
     restoreEnv("NEXUS_MEMORY_COLLECTION", previous.collection);
     restoreEnv("OLLAMA_BASE_URL", previous.ollama);
+  }
+});
+
+test("api: Nex completion falls back when selected Ollama model fails", async () => {
+  const seenModels = [];
+  const model = http.createServer(async (request, response) => {
+    const body = await readJsonBody(request);
+    seenModels.push(body.model);
+    if (body.model === "broken-model") {
+      return sendJson(response, 500, { error: "model failed to load" });
+    }
+    sendJson(response, 200, { message: { content: "Fallback model answered." } });
+  });
+  await new Promise((resolve) => model.listen(0, "127.0.0.1", resolve));
+  const previous = {
+    memoryEnabled: process.env.NEXUS_MEMORY_ENABLED,
+    ollama: process.env.OLLAMA_BASE_URL
+  };
+  process.env.NEXUS_MEMORY_ENABLED = "0";
+  process.env.OLLAMA_BASE_URL = `http://127.0.0.1:${model.address().port}`;
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/nex/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "hello", brain: { provider: "ollama", model: "broken-model", baseUrl: `http://127.0.0.1:${model.address().port}` } })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.completion, "Fallback model answered.");
+    assert(seenModels.includes("broken-model"));
+    assert(seenModels.length > 1);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => model.close(resolve));
+    restoreEnv("NEXUS_MEMORY_ENABLED", previous.memoryEnabled);
+    restoreEnv("OLLAMA_BASE_URL", previous.ollama);
+  }
+});
+
+test("api: Nex can control calendar without a model call", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/nex/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "add a calendar event for June 10, 2026 at 3:00 PM to review launch tasks" })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.tool_used, true);
+    assert(payload.completion.includes("Calendar tool used"));
+    const events = await (await fetch(`http://127.0.0.1:${server.address().port}/calendar/events`)).json();
+    assert(events.events.some((event) => event.dateText === "June 10, 2026"));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 
