@@ -18,7 +18,7 @@ ENV HOST=0.0.0.0 \
     NEXUS_QDRANT_URL=http://qdrant:6333 \
     NEXUS_QDRANT_GRPC_URL=qdrant:6334 \
     OLLAMA_BASE_URL=http://ollama:11434 \
-    OLLAMA_MODEL=qwen2.5-coder:7b
+    OLLAMA_MODEL=qwen2.5-coder:1.5b
 
 VOLUME ["/data"]
 EXPOSE 3131

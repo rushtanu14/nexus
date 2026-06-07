@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { buildEchoActions } from "../src/echo-actions.js";
 import { executeNode } from "../src/executor.js";
 import { NexAssistant } from "../src/assistant/NexAssistant.js";
 import { ActionInferrer } from "../src/echo/ActionInferrer.js";
@@ -15,6 +18,8 @@ import { PetSpawner } from "../src/pets/PetSpawner.js";
 import { configureRunners, resetRunners, RUNNERS } from "../src/runners/index.js";
 import { createServer } from "../src/server.js";
 import { ActionStore } from "../src/store/ActionStore.js";
+import { BRIDGES, createMcpServer, handleJsonRpc } from "../scripts/nexus-mcp-bridge.mjs";
+import { loadMcpSecrets, providerAuthStatus, saveProviderSecrets } from "../scripts/mcp-secret-store.mjs";
 
 test.beforeEach(async () => {
   await clearNodes();
@@ -75,6 +80,51 @@ test("generate: bare field bindings are qualified", async () => {
   assert(validateSchema(node));
 });
 
+test("generate: unresolved field bindings are rejected and retried", async () => {
+  let attempts = 0;
+  configureGenerator({ generate: async (_intent, _context, correction) => {
+    attempts += 1;
+    const content = correction ? "final nexus smoke" : "{{intent}}";
+    return {
+      meta: { app: "files", category: "filesystem", action: "write", label: "Write file", source: "manual" },
+      fields: [
+        { id: "path", type: "string", required: true, label: "Path", value: "/tmp/nexus-retry-test.txt" },
+        { id: "content", type: "string", required: true, label: "Content", value: content }
+      ],
+      runner: {
+        steps: [{ primitive: "fs_write", args: { path: "{{path}}", content: "{{content}}" } }],
+        output_binding: null
+      },
+      mcp: null
+    };
+  } });
+
+  const node = await generateNode("write final nexus smoke to /tmp/nexus-retry-test.txt", {});
+  assert.equal(attempts, 2);
+  assert.equal(node.fields.find((field) => field.id === "content").value, "final nexus smoke");
+  assert(validateSchema(node));
+});
+
+test("generate: deterministic fallback handles literal file writes", async () => {
+  configureGenerator({ generate: async () => ({
+    meta: { app: "files", category: "filesystem", action: "write", label: "Write file", source: "manual" },
+    fields: [
+      { id: "path", type: "string", required: true, label: "Path", value: "/tmp/nexus-fallback-test.txt" },
+      { id: "content", type: "string", required: true, label: "Content", value: "{{intent}}" }
+    ],
+    runner: {
+      steps: [{ primitive: "fs_write", args: { path: "{{fields.path}}", content: "{{fields.content}}" } }],
+      output_binding: null
+    },
+    mcp: null
+  }) });
+
+  const node = await generateNode("write final nexus smoke to /tmp/nexus-fallback-test.txt", {});
+  assert.equal(node.fields.find((field) => field.id === "path").value, "/tmp/nexus-fallback-test.txt");
+  assert.equal(node.fields.find((field) => field.id === "content").value, "final nexus smoke");
+  assert(validateSchema(node));
+});
+
 test("generate: unmappable intent returns error object", async () => {
   const result = await generateNode("make me a coffee", {});
   assert.equal(result.error, "cannot_map");
@@ -127,6 +177,197 @@ test("mcp: register server produces valid nodes", async () => {
     assert(nodes.every((node) => node.mcp !== null));
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("mcp bridge: exposes provider tools and reports auth setup gaps", async () => {
+  for (const app of Object.keys(BRIDGES)) {
+    const payload = await handleJsonRpc(app, { jsonrpc: "2.0", id: app, method: "tools/list", params: {} }, {});
+    assert.equal(payload.result.tools.length, BRIDGES[app].tools.length);
+    assert(payload.result.tools.every((tool) => tool.inputSchema?.type === "object"));
+  }
+
+  await assert.rejects(
+    () => handleJsonRpc("gmail", {
+      jsonrpc: "2.0",
+      id: "gmail",
+      method: "tools/call",
+      params: { name: "draft_email", arguments: { subject: "Follow-up", body: "hello" } }
+    }, {}),
+    /Google needs GOOGLE_CLIENT_ID/
+  );
+
+  const slack = await handleJsonRpc("slack", {
+    jsonrpc: "2.0",
+    id: "slack",
+    method: "tools/call",
+    params: { name: "draft_message", arguments: { channel: "#general", message: "hello" } }
+  }, {});
+  assert.equal(slack.result.preview, true);
+  assert.equal(slack.result.readOnly, true);
+  assert.equal(slack.result.channel, "#general");
+
+  await assert.rejects(
+    () => handleJsonRpc("slack", {
+      jsonrpc: "2.0",
+      id: "slack-search",
+      method: "tools/call",
+      params: { name: "search_messages", arguments: { query: "nexus" } }
+    }, {}),
+    /Slack read access needs/
+  );
+
+  await assert.rejects(
+    () => handleJsonRpc("notion", {
+      jsonrpc: "2.0",
+      id: "notion",
+      method: "tools/call",
+      params: { name: "create_tasks", arguments: { title: "Tasks", tasks: "- Ship Nexus" } }
+    }, {}),
+    /Notion needs NOTION_TOKEN/
+  );
+});
+
+test("mcp secrets: save and merge ignored local provider auth", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "nexus-mcp-secrets-"));
+  const env = { NEXUS_MCP_SECRET_DIR: dir };
+  try {
+    await saveProviderSecrets("google", { clientId: "google-client", clientSecret: "google-secret" }, env);
+    await saveProviderSecrets("google", { refreshToken: "google-refresh" }, env);
+    await saveProviderSecrets("slack", { userToken: "xoxp-read" }, env);
+    await saveProviderSecrets("notion", { token: "notion-token", parentPageId: "page-id" }, env);
+
+    const secrets = await loadMcpSecrets(env);
+    assert.equal(secrets.google.clientId, "google-client");
+    assert.equal(secrets.google.clientSecret, "google-secret");
+    assert.equal(secrets.google.refreshToken, "google-refresh");
+    assert.equal(secrets.slack.userToken, "xoxp-read");
+    assert.equal(secrets.notion.parentPageId, "page-id");
+
+    const status = await providerAuthStatus(env);
+    assert.equal(status.google.ok, true);
+    assert.equal(status.slack.ok, true);
+    assert.equal(status.slack.readOnly, true);
+    assert.equal(status.notion.ok, true);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("mcp bridge: file-backed secrets drive real provider API calls", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "nexus-mcp-real-"));
+  const env = { NEXUS_MCP_SECRET_DIR: dir };
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    const href = String(url);
+    if (href.includes("gmail.googleapis.com")) return jsonResponse({ id: "draft-1", message: { id: "message-1" } });
+    if (href.includes("calendar/v3")) return jsonResponse({ id: "event-1", htmlLink: "https://calendar.example/event-1" });
+    if (href.includes("docs.googleapis.com/v1/documents/") && href.includes(":batchUpdate")) return jsonResponse({});
+    if (href.includes("docs.googleapis.com/v1/documents")) return jsonResponse({ documentId: "doc-1" });
+    if (href.includes("slack.com/api/conversations.list")) return jsonResponse({ ok: true, channels: [{ id: "C1", name: "general" }] });
+    if (href.includes("slack.com/api/search.messages")) return jsonResponse({ ok: true, messages: { total: 1, matches: [{ text: "nexus", ts: "1.0", channel: { id: "C1", name: "general" } }] } });
+    if (href.includes("api.notion.com/v1/pages")) return jsonResponse({ id: "page-1", url: "https://notion.example/page-1" });
+    return jsonResponse({ ok: true });
+  };
+  try {
+    await saveProviderSecrets("google", { accessToken: "google-token" }, env);
+    await saveProviderSecrets("slack", { userToken: "slack-token" }, env);
+    await saveProviderSecrets("notion", { token: "notion-token", parentPageId: "page-id" }, env);
+
+    const gmail = await handleJsonRpc("gmail", {
+      jsonrpc: "2.0",
+      id: "gmail",
+      method: "tools/call",
+      params: { name: "draft_email", arguments: { subject: "Follow-up", body: "hello" } }
+    }, env);
+    assert.equal(gmail.result.draftId, "draft-1");
+
+    const calendar = await handleJsonRpc("google-workspace", {
+      jsonrpc: "2.0",
+      id: "calendar",
+      method: "tools/call",
+      params: { name: "create_calendar_event", arguments: { title: "Sync", start: "2026-06-08T09:00:00", end: "2026-06-08T09:30:00" } }
+    }, env);
+    assert.equal(calendar.result.eventId, "event-1");
+
+    const doc = await handleJsonRpc("google-drive", {
+      jsonrpc: "2.0",
+      id: "doc",
+      method: "tools/call",
+      params: { name: "create_doc", arguments: { name: "Notes", body: "hello" } }
+    }, env);
+    assert.equal(doc.result.documentId, "doc-1");
+
+    const slackList = await handleJsonRpc("slack", {
+      jsonrpc: "2.0",
+      id: "slack-list",
+      method: "tools/call",
+      params: { name: "list_channels", arguments: { limit: 1 } }
+    }, env);
+    assert.equal(slackList.result.channels[0].name, "general");
+    assert.equal(slackList.result.readOnly, true);
+
+    const slackSearch = await handleJsonRpc("slack", {
+      jsonrpc: "2.0",
+      id: "slack-search",
+      method: "tools/call",
+      params: { name: "search_messages", arguments: { query: "nexus" } }
+    }, env);
+    assert.equal(slackSearch.result.total, 1);
+
+    const notion = await handleJsonRpc("notion", {
+      jsonrpc: "2.0",
+      id: "notion",
+      method: "tools/call",
+      params: { name: "create_tasks", arguments: { title: "Tasks", tasks: "- Ship Nexus" } }
+    }, env);
+    assert.equal(notion.result.pageId, "page-1");
+
+    assert(calls.some((call) => call.url.includes("gmail.googleapis.com/gmail/v1/users/me/drafts")));
+    assert(calls.some((call) => call.url.includes("slack.com/api/search.messages")));
+    assert(calls.every((call) => !call.url.includes("chat.postMessage")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("mcp connect: oauth URL and callback save verified provider tokens", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "nexus-mcp-connect-"));
+  const env = { NEXUS_MCP_SECRET_DIR: dir };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    const href = String(url);
+    if (href.includes("oauth2.googleapis.com/tokeninfo")) return jsonResponse({ scope: [
+      "https://www.googleapis.com/auth/gmail.compose",
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/documents"
+    ].join(" ") });
+    if (href.includes("oauth2.googleapis.com/token")) return jsonResponse({ access_token: "google-access", refresh_token: "google-refresh" });
+    if (href.includes("slack.com/api/oauth.v2.access")) return jsonResponse({ ok: true, authed_user: { access_token: "xoxp-read" }, team: { id: "T1" } });
+    if (href.includes("slack.com/api/auth.test")) return jsonResponse({ ok: true, team_id: "T1" });
+    if (href.includes("api.notion.com/v1/oauth/token")) return jsonResponse({ access_token: "secret_notion", workspace_id: "W1", bot_id: "B1" });
+    if (href.includes("api.notion.com/v1/users/me")) return jsonResponse({ object: "user", id: "notion-bot" });
+    return jsonResponse({ ok: true });
+  };
+  try {
+    await saveProviderSecrets("google", { clientId: "google-client", clientSecret: "google-secret" }, env);
+    await saveProviderSecrets("slack", { clientId: "slack-client", clientSecret: "slack-secret" }, env);
+    await saveProviderSecrets("notion", { clientId: "notion-client", clientSecret: "notion-secret", parentPageId: "page-id" }, env);
+
+    await runConnectCallbackSmoke("gmail", env, /accounts\.google\.com/, originalFetch);
+    await runConnectCallbackSmoke("slack", env, /slack\.com\/oauth\/v2\/authorize/, originalFetch);
+    await runConnectCallbackSmoke("notion", env, /api\.notion\.com\/v1\/oauth\/authorize/, originalFetch);
+
+    const status = await providerAuthStatus(env);
+    assert.equal(status.google.connected, true);
+    assert.equal(status.slack.connected, true);
+    assert.equal(status.notion.connected, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await fs.rm(dir, { recursive: true, force: true });
   }
 });
 
@@ -454,6 +695,59 @@ test("api: echo actions build invite workflows without screenshot-specific wordi
   }
 });
 
+test("echo: memory context does not become attendees or action triggers", () => {
+  const actions = buildEchoActions({
+    title: "Product sync",
+    transcript: "Maya wants us to meet again on Friday. Draft the invite and follow up with the decisions from the call.",
+    notes: "Next step: schedule follow up. Owner: Maya.",
+    memory: "Created Nexus brief. Personal assistant priority. Stephen asked for an unrelated invite."
+  });
+
+  const workflow = actions.find((action) => action.kind === "meeting_followup_workflow");
+  assert(workflow, "expected a multi-step MCP workflow");
+  const calendarStep = workflow.mcp.steps.find((step) => step.server === "google-workspace");
+  const emailStep = workflow.mcp.steps.find((step) => step.server === "gmail");
+  assert.equal(calendarStep.inputs.attendees_hint, "Maya");
+  assert.equal(emailStep.inputs.to_hint, "Maya");
+
+  const followUpActions = buildEchoActions({
+    title: "Weekly customer sync",
+    transcript: "We need to send a follow-up email, notify the Slack channel, create Notion tasks, write a recap doc, and schedule the next meeting.",
+    memory: "Old memory says shoot me over an invite."
+  });
+
+  assert(followUpActions.some((action) => action.provider === "Gmail" && action.mcp.tool === "draft_email"));
+  assert.equal(followUpActions.some((action) => action.kind === "meeting_followup_workflow"), false);
+});
+
+test("echo: provider names do not become invite attendees", () => {
+  const actions = buildEchoActions({
+    title: "Integration smoke",
+    transcript: "Maya wants us to meet again on Friday. Draft the invite, send a follow-up email, notify Slack, create Notion tasks, and write a recap doc.",
+    notes: "Owner: Maya. Next step: schedule follow up."
+  });
+  const workflow = actions.find((action) => action.kind === "meeting_followup_workflow");
+  assert(workflow, "expected a multi-step MCP workflow");
+  const calendarStep = workflow.mcp.steps.find((step) => step.server === "google-workspace");
+  const emailStep = workflow.mcp.steps.find((step) => step.server === "gmail");
+  assert.equal(calendarStep.inputs.attendees_hint, "Maya");
+  assert.equal(emailStep.inputs.to_hint, "Maya");
+});
+
+test("echo: title words do not become invite attendees", () => {
+  const actions = buildEchoActions({
+    title: "Pull retest",
+    transcript: "Maya wants us to meet again on Friday. Draft the invite and follow up with the decisions from the call.",
+    notes: "Next step: schedule follow up. Owner: Maya."
+  });
+  const workflow = actions.find((action) => action.kind === "meeting_followup_workflow");
+  assert(workflow, "expected a multi-step MCP workflow");
+  const calendarStep = workflow.mcp.steps.find((step) => step.server === "google-workspace");
+  const emailStep = workflow.mcp.steps.find((step) => step.server === "gmail");
+  assert.equal(calendarStep.inputs.attendees_hint, "Maya");
+  assert.equal(emailStep.inputs.to_hint, "Maya");
+});
+
 test("api: echo action run reports missing MCP registration", async () => {
   const server = createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -480,6 +774,81 @@ test("api: echo action run reports missing MCP registration", async () => {
     assert.equal(payload.status, "needs_mcp");
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("api: echo action run executes registered MCP tool", async () => {
+  const calls = [];
+  const mcpServer = http.createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      const payload = JSON.parse(body || "{}");
+      response.setHeader("content-type", "application/json");
+      if (payload.method === "tools/list") {
+        response.end(JSON.stringify({
+          jsonrpc: "2.0",
+          id: payload.id,
+          result: {
+            tools: [{
+              name: "draft_email",
+              description: "Draft email",
+              inputSchema: {
+                type: "object",
+                properties: { body: { type: "string" } },
+                required: ["body"]
+              }
+            }]
+          }
+        }));
+        return;
+      }
+      calls.push(payload.params);
+      response.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: payload.id,
+        result: { ok: true, draftId: "draft-1" }
+      }));
+    });
+  });
+  await new Promise((resolve) => mcpServer.listen(0, "127.0.0.1", resolve));
+
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  const mcpPort = mcpServer.address().port;
+  try {
+    await fetch(`http://127.0.0.1:${port}/mcp/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ app: "gmail", url: `http://127.0.0.1:${mcpPort}` })
+    });
+    const action = {
+      id: crypto.randomUUID(),
+      kind: "email_follow_up",
+      provider: "Gmail",
+      title: "Draft follow-up email",
+      summary: "Prepare email",
+      confidence: 0.8,
+      status: "suggested",
+      mcp: { server: "gmail", tool: "draft_email", inputs: { body: "hello" } }
+    };
+    const response = await fetch(`http://127.0.0.1:${port}/echo/action/run`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action })
+    });
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.status, "executed");
+    assert.equal(payload.results[0].result.draftId, "draft-1");
+    assert.equal(calls[0].name, "draft_email");
+    assert.equal(calls[0].arguments.body, "hello");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => mcpServer.close(resolve));
   }
 });
 
@@ -787,6 +1156,34 @@ async function readJsonBody(request) {
 function sendJson(response, status, body) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
+}
+
+async function runConnectCallbackSmoke(app, env, expectedAuthUrlPattern, localFetch = fetch) {
+  const server = createMcpServer(app, env);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const connect = await localFetch(`http://127.0.0.1:${port}/connect?format=json`);
+    const payload = await connect.json();
+    assert.equal(connect.status, 200);
+    assert.match(payload.authUrl, expectedAuthUrlPattern);
+    const state = new URL(payload.authUrl).searchParams.get("state");
+    assert(state);
+
+    const callback = await localFetch(`http://127.0.0.1:${port}/oauth/callback?code=test-code&state=${encodeURIComponent(state)}`);
+    const html = await callback.text();
+    assert.equal(callback.status, 200);
+    assert.match(html, /connected/i);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 function restoreEnv(key, value) {

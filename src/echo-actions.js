@@ -32,23 +32,32 @@ const ATTENDEE_STOP_WORDS = new Set([
   "Action",
   "Agenda",
   "Client",
+  "Create",
   "Decision",
   "Discussion",
+  "Doc",
   "Draft",
+  "Drive",
   "Echo",
   "Friday",
   "Follow",
+  "Gmail",
+  "Google",
+  "Integration",
   "Meeting",
   "Monday",
   "Nex",
   "Next",
   "Notes",
+  "Notion",
   "Objective",
   "Owner",
   "Participants",
   "Please",
   "Product",
   "Saturday",
+  "Slack",
+  "Smoke",
   "Sunday",
   "Sync",
   "Thursday",
@@ -62,7 +71,10 @@ const ATTENDEE_STOP_WORDS = new Set([
 ]);
 
 export function buildEchoActions({ transcript = "", notes = "", title = "Echo notes", memory = "" } = {}) {
-  const context = normalizeText([title, notes, transcript, memory].filter(Boolean).join("\n\n"));
+  const context = normalizeText([title, notes, transcript].filter(Boolean).join("\n\n"));
+  const attendeeContext = normalizeText([notes, transcript].filter(Boolean).join("\n\n"));
+  const memoryContext = normalizeText(memory);
+  const payloadContext = memoryContext ? `${context}\n\nRelevant memory:\n${memoryContext}` : context;
   if (!context) return [];
 
   const actions = [];
@@ -83,19 +95,21 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
           provider: PROVIDERS.workspace,
           payload: {
             title: subjectFor(title, "Follow-up sync"),
-            attendees_hint: inferAttendees(context),
+            attendees_hint: inferAttendees(attendeeContext),
             when_hint: inferWhen(context),
             agenda: inferredTasks(context).join("\n"),
-            context
+            context: payloadContext,
+            memory_context: memoryContext
           }
         },
         {
           provider: PROVIDERS.gmail,
           payload: {
             subject: subjectFor(title, "Follow-up sync"),
-            to_hint: inferAttendees(context),
+            to_hint: inferAttendees(attendeeContext),
             body: followUpBody(context),
-            context
+            context: payloadContext,
+            memory_context: memoryContext
           }
         }
       ]
@@ -111,9 +125,10 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
       confidence: confidence(context, ["follow up", "email", "send", "client", "customer"]),
       payload: {
         subject: subjectFor(title, "Follow-up"),
-        to_hint: inferAttendees(context),
+        to_hint: inferAttendees(attendeeContext),
         body: followUpBody(context),
-        context
+        context: payloadContext,
+        memory_context: memoryContext
       }
     }));
   }
@@ -128,7 +143,8 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
       payload: {
         channel_hint: channelHint(context),
         message: slackMessage(context),
-        context
+        context: payloadContext,
+        memory_context: memoryContext
       }
     }));
   }
@@ -143,7 +159,8 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
       payload: {
         database_hint: "Tasks",
         tasks: inferredTasks(context).join("\n"),
-        context
+        context: payloadContext,
+        memory_context: memoryContext
       }
     }));
   }
@@ -158,7 +175,8 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
       payload: {
         name: subjectFor(title, "Meeting recap"),
         body: notes || recapBody(context),
-        context
+        context: payloadContext,
+        memory_context: memoryContext
       }
     }));
   }
@@ -172,10 +190,11 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
       confidence: confidence(context, ["schedule", "calendar", "meeting", "call", "next week"]),
       payload: {
         title: subjectFor(title, "Follow-up meeting"),
-        attendees_hint: inferAttendees(context),
+        attendees_hint: inferAttendees(attendeeContext),
         when_hint: inferWhen(context),
         agenda: inferredTasks(context).join("\n"),
-        context
+        context: payloadContext,
+        memory_context: memoryContext
       }
     }));
   }
@@ -185,7 +204,7 @@ export function buildEchoActions({ transcript = "", notes = "", title = "Echo no
     .slice(0, 8);
 }
 
-export function runEchoAction(action, { registeredServers = {} } = {}) {
+export async function runEchoAction(action, { registeredServers = {} } = {}) {
   const calls = action?.mcp?.steps?.length ? action.mcp.steps : [action?.mcp].filter(Boolean);
   const missing = calls.filter((call) => !registeredServers[call.server]).map((call) => call.server);
   if (missing.length > 0) {
@@ -196,12 +215,38 @@ export function runEchoAction(action, { registeredServers = {} } = {}) {
       action
     };
   }
+  const results = [];
+  for (const call of calls) {
+    results.push({
+      server: call.server,
+      tool: call.tool,
+      result: await callMCPTool(registeredServers[call.server], call.tool, call.inputs ?? {})
+    });
+  }
   return {
     ok: true,
-    status: "ready_to_run",
-    message: `Prepared ${action.title} with ${calls.length} MCP step(s).`,
+    status: "executed",
+    message: `Ran ${action.title} with ${calls.length} MCP step(s).`,
+    results,
     action
   };
+}
+
+async function callMCPTool(url, tool, inputs) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: crypto.randomUUID(),
+      method: "tools/call",
+      params: { name: tool, arguments: inputs }
+    })
+  });
+  if (!response.ok) throw new Error(`MCP ${tool} failed with HTTP ${response.status}`);
+  const payload = await response.json();
+  if (payload.error) throw new Error(payload.error.message ?? `MCP ${tool} failed`);
+  return payload.result ?? payload;
 }
 
 function action({ kind, provider, title, summary, confidence, payload }) {

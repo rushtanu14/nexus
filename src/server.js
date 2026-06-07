@@ -155,7 +155,7 @@ export function createApp() {
     response.json({ ok: true, ...result });
   }));
   app.post("/echo/action/run", asyncRoute(async (request, response) => {
-    const result = runEchoAction(request.body.action, { registeredServers: await listServers() });
+    const result = await runEchoAction(request.body.action, { registeredServers: await listServers() });
     await optionalRemember({
       memory_type: "automation",
       content: `Echo MCP action "${request.body.action?.title ?? "unknown"}" status: ${result.status}.`,
@@ -228,7 +228,8 @@ export function createApp() {
 
 async function ollamaStatus() {
   try {
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { signal: AbortSignal.timeout(500) });
+    const timeoutMs = Number(process.env.NEXUS_HEALTH_TIMEOUT_MS ?? 2000);
+    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { signal: AbortSignal.timeout(timeoutMs) });
     return response.ok;
   } catch {
     return false;

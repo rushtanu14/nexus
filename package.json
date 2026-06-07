@@ -13,7 +13,10 @@
     "model:pull": "ollama pull qwen2.5-coder:1.5b && ollama pull nomic-embed-text",
     "memory:pull": "docker pull qdrant/qdrant",
     "memory:start": "docker compose up -d qdrant",
-    "memory:stop": "docker compose stop qdrant"
+    "memory:stop": "docker compose stop qdrant",
+    "mcp:bridge": "node scripts/nexus-mcp-bridge.mjs",
+    "mcp:register": "node scripts/register-mcp-bridges.mjs",
+    "mcp:auth": "node scripts/mcp-auth.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

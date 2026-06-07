@@ -7,7 +7,7 @@ const PRIMITIVES = [
   "fs_read", "fs_write", "shell_run", "http_request", "mcp_call", "ai_infer"
 ];
 
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5-coder:7b";
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5-coder:1.5b";
 export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -54,6 +54,14 @@ export async function generateNode(intent, context = {}) {
       correction = error.message;
     }
   }
+  const fallback = deterministicNode(intent.trim());
+  if (fallback) {
+    const node = normalizeGeneratedNode(fallback);
+    validateNode(node, { context });
+    validateRequiredFieldBindings(node, context);
+    await saveNode(node, intent);
+    return node;
+  }
   throw new Error(`Local model could not produce an executable node: ${correction}`);
 }
 
@@ -91,14 +99,117 @@ export async function ollamaPlanner(intent, context = {}, correction = null) {
 }
 
 function validateRequiredFieldBindings(node, context) {
-  for (const field of node.fields.filter((candidate) => candidate.required)) {
+  const scope = { context, ...context };
+  for (const field of node.fields.filter((candidate) => candidate.required || String(candidate.value ?? "").includes("{{"))) {
     for (const reference of templateReferences(field.value)) {
-      if (!reference.startsWith("context.")) continue;
-      const normalized = reference.startsWith("context.") ? reference.slice("context.".length) : reference;
-      const resolved = normalized.split(".").reduce((current, key) => current?.[key], context);
+      if (reference.startsWith("trigger.") || reference.startsWith("nodes.")) continue;
+      const resolved = reference.split(".").reduce((current, key) => current?.[key], scope);
       if (resolved === undefined) throw new Error(`required field ${field.id} has unresolved runtime binding ${reference}; use the literal value from the intent`);
     }
   }
+}
+
+function deterministicNode(intent) {
+  return writeFileNode(intent) ?? readFileNode(intent) ?? browserNode(intent) ?? httpNode(intent);
+}
+
+function writeFileNode(intent) {
+  const withContent = intent.match(/^write(?:\s+a)?\s+string\s+to\s+(.+?)\s+with\s+content\s+([\s\S]+)$/i);
+  const direct = intent.match(/^write\s+([\s\S]+?)\s+to\s+(\/\S+)$/i);
+  const path = withContent?.[1]?.trim() ?? direct?.[2]?.trim();
+  const content = cleanLiteral(withContent?.[2] ?? direct?.[1]);
+  if (!path || !content) return null;
+  return {
+    meta: { app: "files", category: "filesystem", action: "write_file", label: "Write file", source: "manual" },
+    fields: [
+      { id: "path", type: "string", required: true, label: "Path", value: path },
+      { id: "content", type: "string", required: true, label: "Content", value: content }
+    ],
+    runner: {
+      steps: [{ primitive: "fs_write", args: { path: "{{fields.path}}", content: "{{fields.content}}" } }],
+      output_binding: null
+    },
+    mcp: null
+  };
+}
+
+function readFileNode(intent) {
+  const match = intent.match(/^read(?:\s+file)?(?:\s+at|\s+from)?\s+(\/\S+)$/i);
+  const path = match?.[1]?.trim();
+  if (!path) return null;
+  return {
+    meta: { app: "files", category: "filesystem", action: "read_file", label: "Read file", source: "manual" },
+    fields: [{ id: "path", type: "string", required: true, label: "Path", value: path }],
+    runner: {
+      steps: [{ primitive: "fs_read", args: { path: "{{fields.path}}" } }],
+      output_binding: null
+    },
+    mcp: null
+  };
+}
+
+function browserNode(intent) {
+  const extract = intent.match(/^open\s+(\S+)\s+and\s+extract\s+(?:the\s+)?(.+)$/i);
+  if (extract) {
+    const target = extract[2].toLowerCase();
+    return {
+      meta: { app: "browser", category: "web", action: "extract", label: "Extract from page", source: "manual" },
+      fields: [
+        { id: "url", type: "string", required: true, label: "URL", value: extract[1] },
+        { id: "selector", type: "string", required: true, label: "Selector", value: target.includes("title") ? "title" : "h1" },
+        { id: "attribute", type: "string", required: true, label: "Attribute", value: "innerText" }
+      ],
+      runner: {
+        steps: [
+          { primitive: "browser_goto", args: { url: "{{fields.url}}" } },
+          { primitive: "browser_extract", args: { selector: "{{fields.selector}}", attribute: "{{fields.attribute}}" } }
+        ],
+        output_binding: null
+      },
+      mcp: null
+    };
+  }
+  const open = intent.match(/^open\s+(\S+)$/i);
+  if (!open) return null;
+  return {
+    meta: { app: "browser", category: "web", action: "open", label: "Open URL", source: "manual" },
+    fields: [{ id: "url", type: "string", required: true, label: "URL", value: open[1] }],
+    runner: {
+      steps: [{ primitive: "browser_goto", args: { url: "{{fields.url}}" } }],
+      output_binding: null
+    },
+    mcp: null
+  };
+}
+
+function httpNode(intent) {
+  const match = intent.match(/^(?:send\s+)?(?:an?\s+)?(get|post)\s+(?:request\s+)?(?:to\s+)?(\S+)/i);
+  if (!match) return null;
+  return {
+    meta: { app: "http", category: "network", action: "request", label: "HTTP request", source: "manual" },
+    fields: [
+      { id: "url", type: "string", required: true, label: "URL", value: match[2] },
+      { id: "method", type: "string", required: true, label: "Method", value: match[1].toUpperCase() }
+    ],
+    runner: {
+      steps: [{ primitive: "http_request", args: { url: "{{fields.url}}", method: "{{fields.method}}" } }],
+      output_binding: null
+    },
+    mcp: null
+  };
+}
+
+function cleanLiteral(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text.slice(1, -1);
+    }
+  }
+  return text.replace(/^(?:the\s+literal\s+sentence|a\s+string|string)\s+/i, "").trim();
 }
 
 function normalizeGeneratedNode(node) {
@@ -176,6 +287,7 @@ Rules:
 - Map the user's exact intent to one or more available runner steps.
 - Put every concrete value from the intent directly into fields. Do not replace a value stated in the intent with a context binding.
 - Use {{context.key}} only when the value is genuinely absent from the intent and present in the supplied context object.
+- Do not use {{intent}}. If text should be written or sent, copy the exact text from the user's intent into a field value.
 - Runner args may reference fields as {{fields.id}} and earlier outputs as {{steps.0.output}}.
 - Use browser_goto before browser_extract, browser_click, or browser_fill when navigating is required.
 - Use shell_run only when a narrower primitive cannot express the operation.
