@@ -8,6 +8,8 @@ struct LocalWorkflowStudioNativeApp: App {
     @State private var model = StudioModel()
     @State private var nexVoice = NexVoiceStore()
     @State private var echoStore = EchoStore()
+    @State private var startupStatus = "Starting local AI..."
+    @State private var startupReady = false
 
     init() {
         NSApplication.shared.setActivationPolicy(.regular)
@@ -17,13 +19,21 @@ struct LocalWorkflowStudioNativeApp: App {
         WindowGroup {
             ContentView(model: model, nexVoice: nexVoice, echoStore: echoStore)
                 .frame(minWidth: 1180, idealWidth: 1560, minHeight: 760, idealHeight: 940)
+                .overlay(alignment: .top) {
+                    if !startupReady {
+                        StartupStatusOverlay(status: startupStatus)
+                            .padding(.top, 18)
+                    }
+                }
                 .onAppear {
                     NSApplication.shared.activate(ignoringOtherApps: true)
-                    EngineProcessManager.shared.startIfNeeded()
                     model.startScheduleMonitor()
                     DispatchQueue.main.async {
                         positionPrimaryWindowBottomRight()
                     }
+                }
+                .task {
+                    await runStartupSequence()
                 }
         }
         .defaultSize(width: 1560, height: 940)
@@ -61,7 +71,7 @@ struct LocalWorkflowStudioNativeApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
 
                 Button("Talk to Nex") {
-                    nexVoice.startListening(using: model, echoStore: echoStore)
+                    Task { await startNexVoiceFromAnywhere() }
                 }
                 .keyboardShortcut(.space, modifiers: [.shift])
             }
@@ -85,5 +95,51 @@ struct LocalWorkflowStudioNativeApp: App {
             height: height
         )
         window.setFrame(frame, display: true, animate: false)
+    }
+
+    private func runStartupSequence() async {
+        startupReady = false
+        startupStatus = "Starting local AI backend..."
+        await EngineProcessManager.shared.ensureReady()
+
+        startupStatus = "Loading MCP connectors..."
+        await model.refreshMCPConnectors()
+
+        startupStatus = "Registering Shift+Space..."
+        GlobalHotKeyManager.shared.registerShiftSpace {
+            Task { @MainActor in
+                await startNexVoiceFromAnywhere()
+            }
+        }
+
+        startupStatus = "Ready"
+        startupReady = true
+    }
+
+    private func startNexVoiceFromAnywhere() async {
+        startupReady = false
+        startupStatus = "Checking local AI..."
+        await EngineProcessManager.shared.ensureReady()
+        startupReady = true
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        nexVoice.startListening(using: model, echoStore: echoStore)
+    }
+}
+
+private struct StartupStatusOverlay: View {
+    var status: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            Text(status)
+                .font(.system(size: 12).weight(.semibold))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(radius: 12)
     }
 }
