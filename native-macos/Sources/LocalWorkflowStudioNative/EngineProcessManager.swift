@@ -12,18 +12,27 @@ final class EngineProcessManager {
 
     func startIfNeeded() {
         Task {
-            let provider = savedBrainProvider()
-            if provider == "lmstudio" {
-                startLMStudioServerIfNeeded()
-            } else if !(await isReachable(URL(string: "http://127.0.0.1:11434/api/tags")!)) {
-                startOllama()
-            }
-            if !(await isEngineCompatible()) {
-                stopExistingEngine()
-                startEngine()
-            }
-            startMCPBridge()
+            await ensureReady()
         }
+    }
+
+    func ensureReady() async {
+        let provider = savedBrainProvider()
+        if provider == "lmstudio" {
+            startLMStudioServerIfNeeded()
+        } else if !(await isReachable(URL(string: "http://127.0.0.1:11434/api/tags")!)) {
+            startOllama()
+        }
+        if !(await isEngineCompatible()) {
+            stopExistingEngine()
+            startEngine()
+        }
+        _ = await waitForEngine(timeout: 30)
+        if provider != "openai-compatible" {
+            await runBrainHealthCheck()
+        }
+        startMCPBridge()
+        _ = await waitForMCPBridge(timeout: 8)
     }
 
     private func startOllama() {
@@ -198,5 +207,36 @@ final class EngineProcessManager {
             return false
         }
         return features["echoActions"] as? Bool == true && features["echoRealtime"] as? Bool == true
+    }
+
+    private func waitForEngine(timeout seconds: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if await isEngineCompatible() { return true }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return false
+    }
+
+    private func waitForMCPBridge(timeout seconds: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if isPortOpen(host: "127.0.0.1", port: 9001) { return true }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return false
+    }
+
+    private func runBrainHealthCheck() async {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:3131/brain/health")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 35
+        request.setValue("application/json", forHTTPHeaderField: "content-type")
+        request.httpBody = savedBrainConfigData() ?? Data("{}".utf8)
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
+    private func savedBrainConfigData() -> Data? {
+        UserDefaults.standard.data(forKey: "NexusBrainConfig")
     }
 }
