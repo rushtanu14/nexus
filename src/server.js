@@ -14,10 +14,30 @@ import { listServers, registerServer, scrapeServer } from "./mcp-registry.js";
 import { clearNodes, deleteNode, listNodes, saveNode } from "./node-store.js";
 import { PetSpawner } from "./pets/PetSpawner.js";
 import { actionStore } from "./store/ActionStore.js";
+import { BRIDGES } from "../scripts/nexus-mcp-bridge.mjs";
+
+const MCP_HOST = process.env.NEXUS_MCP_HOST ?? "127.0.0.1";
+const BUILT_IN_MCP_CONNECTORS = Object.entries(BRIDGES).map(([app, bridge]) => ({
+  app,
+  label: {
+    gmail: "Gmail",
+    "google-workspace": "Google Calendar",
+    "google-drive": "Google Drive",
+    slack: "Slack",
+    notion: "Notion"
+  }[app] ?? app,
+  provider: app === "gmail" || app === "google-workspace" || app === "google-drive" ? "google" : app,
+  url: `http://${MCP_HOST}:${bridge.port}`,
+  connectUrl: `http://${MCP_HOST}:${bridge.port}/connect`,
+  healthUrl: `http://${MCP_HOST}:${bridge.port}/health`,
+  testUrl: `http://${MCP_HOST}:${bridge.port}/test`,
+  tools: bridge.tools.map((tool) => tool.name)
+}));
 
 const execFileAsync = promisify(execFile);
 
 export function createApp() {
+  registerBuiltInMcpServers();
   const app = express();
   const complete = (prompt, brain) => completeWithNex(prompt, brain, "");
   const inferrer = new ActionInferrer({ store: actionStore, complete });
@@ -220,10 +240,75 @@ export function createApp() {
   app.get("/mcp/list", asyncRoute(async (_request, response) => {
     response.json(await listServers());
   }));
+  app.get("/mcp/catalog", asyncRoute(async (_request, response) => {
+    response.json({ connectors: BUILT_IN_MCP_CONNECTORS, registered: await listServers() });
+  }));
+  app.get("/mcp/status", asyncRoute(async (_request, response) => {
+    response.json({
+      connectors: await Promise.all(BUILT_IN_MCP_CONNECTORS.map(connectorStatus)),
+      registered: await listServers()
+    });
+  }));
+  app.get("/mcp/connect/:app", asyncRoute(async (request, response) => {
+    const connector = connectorForApp(request.params.app);
+    const payload = await fetchConnectorJson(`${connector.connectUrl}?format=json`);
+    response.json({ ...payload, app: connector.app, label: connector.label });
+  }));
+  app.post("/mcp/test/:app", asyncRoute(async (request, response) => {
+    const connector = connectorForApp(request.params.app);
+    response.json(await fetchConnectorJson(connector.testUrl));
+  }));
 
   app.use((_request, response) => response.status(404).json({ error: "not_found" }));
   app.use((error, _request, response, _next) => response.status(400).json({ error: error.message }));
   return app;
+}
+
+registerBuiltInMcpServers();
+
+function registerBuiltInMcpServers() {
+  for (const connector of BUILT_IN_MCP_CONNECTORS) {
+    registerServer(connector.app, connector.url);
+  }
+}
+
+function connectorForApp(app) {
+  const connector = BUILT_IN_MCP_CONNECTORS.find((item) => item.app === app);
+  if (!connector) throw new Error(`Unknown MCP connector: ${app}`);
+  return connector;
+}
+
+async function connectorStatus(connector) {
+  try {
+    const health = await fetchConnectorJson(connector.healthUrl, { timeoutMs: 800 });
+    return {
+      ...connector,
+      reachable: true,
+      ok: Boolean(health.ok),
+      auth: health.auth,
+      state: health.auth?.connected ? "connected" : health.auth?.connectReady ? "ready" : "setup_needed",
+      error: null
+    };
+  } catch (error) {
+    return {
+      ...connector,
+      reachable: false,
+      ok: false,
+      auth: null,
+      state: "offline",
+      error: error.message
+    };
+  }
+}
+
+async function fetchConnectorJson(url, { timeoutMs = 5000 } = {}) {
+  const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : {};
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error?.message ?? payload.error ?? `MCP connector request failed with HTTP ${response.status}`);
+  }
+  return payload;
 }
 
 async function ollamaStatus() {

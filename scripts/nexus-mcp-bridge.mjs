@@ -159,6 +159,9 @@ export function createMcpServer(app, env = process.env) {
           auth: auth[authProviderForApp(app)]
         });
       }
+      if (request.method === "GET" && request.url === "/test") {
+        return sendJson(response, 200, await testConnector(app, env));
+      }
       if (request.method === "GET" && request.url.startsWith("/connectors")) {
         return sendConnectorPage(response, await providerAuthStatus(env), request);
       }
@@ -175,6 +178,64 @@ export function createMcpServer(app, env = process.env) {
       });
     }
   });
+}
+
+export async function testConnector(app, env = process.env) {
+  const bridge = BRIDGES[app];
+  if (!bridge) throw new Error(`Unknown MCP bridge app: ${app}`);
+  const provider = authProviderForApp(app);
+  const auth = (await providerAuthStatus(env))[provider];
+  if (!auth?.ok) {
+    throw new Error(`${labelForApp(app)} is not authenticated: ${(auth?.missing ?? ["credentials"]).join(", ")}`);
+  }
+  if (provider === "google") {
+    const token = await googleAccessToken(env);
+    const payload = await fetchJson(`https://oauth2.googleapis.com/tokeninfo?${new URLSearchParams({ access_token: token })}`, {}, "Google MCP test");
+    const granted = new Set(String(payload.scope ?? "").split(/\s+/).filter(Boolean));
+    return {
+      ok: true,
+      app,
+      provider,
+      tested: "tokeninfo",
+      scopes: [...granted].sort()
+    };
+  }
+  if (provider === "slack") {
+    const token = await slackReadToken(env);
+    const payload = await fetchJson("https://slack.com/api/auth.test", {
+      headers: { authorization: `Bearer ${token}` }
+    }, "Slack MCP test");
+    if (!payload.ok) throw new Error(`Slack MCP test failed: ${payload.error ?? "unknown_error"}`);
+    return {
+      ok: true,
+      app,
+      provider,
+      tested: "auth.test",
+      teamId: payload.team_id,
+      userId: payload.user_id
+    };
+  }
+  if (provider === "notion") {
+    const secrets = await loadMcpSecrets(env);
+    if (!secrets.notion.parentPageId && !secrets.notion.databaseId) {
+      throw new Error("Notion test needs NOTION_PARENT_PAGE_ID or NOTION_DATABASE_ID.");
+    }
+    const payload = await fetchJson("https://api.notion.com/v1/users/me", {
+      headers: {
+        authorization: `Bearer ${secrets.notion.token}`,
+        "notion-version": NOTION_VERSION
+      }
+    }, "Notion MCP test");
+    return {
+      ok: true,
+      app,
+      provider,
+      tested: "users/me",
+      userId: payload.id,
+      workspaceName: secrets.notion.workspaceName
+    };
+  }
+  throw new Error(`Unsupported MCP test provider: ${provider}`);
 }
 
 export async function startBridges({ apps = Object.keys(BRIDGES), host = HOST, env = process.env } = {}) {

@@ -6,6 +6,7 @@ final class EngineProcessManager {
     static let shared = EngineProcessManager()
 
     private var engineProcess: Process?
+    private var mcpBridgeProcess: Process?
     private var ollamaProcess: Process?
     private var lmStudioProcess: Process?
 
@@ -21,6 +22,7 @@ final class EngineProcessManager {
                 stopExistingEngine()
                 startEngine()
             }
+            startMCPBridge()
         }
     }
 
@@ -59,6 +61,29 @@ final class EngineProcessManager {
         engineProcess = process
     }
 
+    private func startMCPBridge() {
+        guard mcpBridgeProcess == nil,
+              !isPortOpen(host: "127.0.0.1", port: 9001),
+              let root = engineRoot() else { return }
+        let process = Process()
+        let script = root.appendingPathComponent("scripts/nexus-mcp-bridge.mjs").path
+        if let executable = nodeExecutable() {
+            process.executableURL = executable
+            process.arguments = [script]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = ["node", script]
+        }
+        process.currentDirectoryURL = root
+        var environment = ProcessInfo.processInfo.environment
+        environment["NEXUS_MCP_SECRET_DIR"] = appSupportDirectory().appendingPathComponent("mcp-secrets").path
+        process.environment = environment
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        mcpBridgeProcess = process
+    }
+
     private func startLMStudioServerIfNeeded() {
         guard lmStudioProcess == nil,
               let executable = lmStudioExecutable(),
@@ -75,6 +100,8 @@ final class EngineProcessManager {
     private func stopExistingEngine() {
         engineProcess?.terminate()
         engineProcess = nil
+        mcpBridgeProcess?.terminate()
+        mcpBridgeProcess = nil
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
@@ -121,6 +148,14 @@ final class EngineProcessManager {
             "/usr/local/bin/lms"
         ].compactMap { $0 }
         return candidates.first(where: FileManager.default.isExecutableFile(atPath:)).map(URL.init(fileURLWithPath:))
+    }
+
+    private func appSupportDirectory() -> URL {
+        let directory = FileManager.default
+            .homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Nexus")
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     private func savedBrainProvider() -> String {

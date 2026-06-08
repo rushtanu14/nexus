@@ -1246,6 +1246,9 @@ private extension NSImage {
 
 private struct NexBrainSurface: View {
     @Bindable var model: StudioModel
+    @State private var selectedTab = "models"
+    @State private var externalMCPName = ""
+    @State private var externalMCPURL = ""
 
     private var catalog: [String] {
         model.brainConfig.provider == "ollama" ? model.brainCatalog.ollama : model.brainCatalog.lmstudio
@@ -1263,78 +1266,18 @@ private struct NexBrainSurface: View {
                             .foregroundStyle(StudioPalette.muted)
                     }
 
-                    VStack(alignment: .leading, spacing: 15) {
-                        BrainField(title: "Provider") {
-                            Picker("Provider", selection: Binding(
-                                get: { model.brainConfig.provider },
-                                set: { model.selectBrainProvider($0) }
-                            )) {
-                                Text("Ollama").tag("ollama")
-                                Text("LM Studio").tag("lmstudio")
-                                Text("OpenAI-compatible API").tag("openai-compatible")
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 360, alignment: .leading)
-                        }
-
-                        if model.brainConfig.provider != "openai-compatible" {
-                            BrainField(title: "Quick model picker") {
-                                Picker("Model", selection: Binding(
-                                    get: { model.brainConfig.model },
-                                    set: { model.selectBrainModel($0) }
-                                )) {
-                                    ForEach(catalog, id: \.self) { Text($0).tag($0) }
-                                }
-                                .labelsHidden()
-                                .pickerStyle(.menu)
-                                .frame(maxWidth: 360, alignment: .leading)
-                            }
-                        }
-
-                        BrainField(title: "Model name") {
-                            TextField("model identifier", text: $model.brainConfig.model)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        if model.brainConfig.provider == "openai-compatible" {
-                            BrainField(title: "API key") {
-                                SecureField("paste API key", text: $model.brainConfig.apiKey)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                            BrainField(title: "Compatible endpoint") {
-                                TextField("https://api.openai.com/v1", text: $model.brainConfig.baseUrl)
-                                    .textFieldStyle(.roundedBorder)
-                            }
-                        }
-
-                        Text(providerDetail)
-                            .font(.system(size: 12))
-                            .foregroundStyle(StudioPalette.muted)
-
-                        HStack {
-                            Button("save brain", action: model.saveBrain)
-                                .buttonStyle(PrimaryButtonStyle())
-                            if model.brainConfig.provider != "openai-compatible" {
-                                Button("prepare now", action: model.prepareSelectedBrain)
-                                    .buttonStyle(SecondaryButtonStyle())
-                            }
-                            Text(model.brainStatus)
-                                .font(.system(size: 12).weight(.medium))
-                                .foregroundStyle(StudioPalette.accentBright)
-                            Spacer()
-                            Button {
-                                Task { await model.refreshBrain() }
-                            } label: {
-                                Label("refresh", systemImage: "arrow.clockwise")
-                            }
-                            .buttonStyle(SecondaryButtonStyle())
-                        }
+                    Picker("Brain tab", selection: $selectedTab) {
+                        Text("Models").tag("models")
+                        Text("MCP Connectors").tag("connectors")
                     }
-                    .padding(18)
-                    .background(StudioPalette.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 360, alignment: .leading)
+
+                    if selectedTab == "models" {
+                        modelPanel
+                    } else {
+                        connectorsPanel
+                    }
                 }
                 .padding(24)
             }
@@ -1342,11 +1285,248 @@ private struct NexBrainSurface: View {
         .frame(minWidth: 760)
     }
 
+    private var modelPanel: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            BrainField(title: "Provider") {
+                Picker("Provider", selection: Binding(
+                    get: { model.brainConfig.provider },
+                    set: { model.selectBrainProvider($0) }
+                )) {
+                    Text("Ollama").tag("ollama")
+                    Text("LM Studio").tag("lmstudio")
+                    Text("OpenAI-compatible API").tag("openai-compatible")
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: 360, alignment: .leading)
+            }
+
+            if model.brainConfig.provider != "openai-compatible" {
+                BrainField(title: "Quick model picker") {
+                    Picker("Model", selection: Binding(
+                        get: { model.brainConfig.model },
+                        set: { model.selectBrainModel($0) }
+                    )) {
+                        ForEach(catalog, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 360, alignment: .leading)
+                }
+            }
+
+            BrainField(title: "Model name") {
+                TextField("model identifier", text: $model.brainConfig.model)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            if model.brainConfig.provider == "openai-compatible" {
+                BrainField(title: "API key") {
+                    SecureField("paste API key", text: $model.brainConfig.apiKey)
+                        .textFieldStyle(.roundedBorder)
+                }
+                BrainField(title: "Compatible endpoint") {
+                    TextField("https://api.openai.com/v1", text: $model.brainConfig.baseUrl)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            Text(providerDetail)
+                .font(.system(size: 12))
+                .foregroundStyle(StudioPalette.muted)
+
+            HStack {
+                Button("save brain", action: model.saveBrain)
+                    .buttonStyle(PrimaryButtonStyle())
+                if model.brainConfig.provider != "openai-compatible" {
+                    Button("prepare now", action: model.prepareSelectedBrain)
+                        .buttonStyle(SecondaryButtonStyle())
+                }
+                Text(model.brainStatus)
+                    .font(.system(size: 12).weight(.medium))
+                    .foregroundStyle(StudioPalette.accentBright)
+                Spacer()
+                Button {
+                    Task { await model.refreshBrain() }
+                } label: {
+                    Label("refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+        }
+        .padding(18)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+    }
+
+    private var connectorsPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("MCP Connectors")
+                        .font(.system(size: 18).weight(.semibold))
+                    Text("Connectors run through local MCP bridge servers. OAuth opens in your browser and credentials stay on this machine.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(StudioPalette.muted)
+                }
+                Spacer()
+                Button {
+                    Task { await model.refreshMCPConnectors() }
+                } label: {
+                    Label("refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+            }
+
+            Text(model.mcpStatus)
+                .font(.system(size: 12).weight(.medium))
+                .foregroundStyle(StudioPalette.accentBright)
+
+            VStack(spacing: 0) {
+                ForEach(model.mcpConnectors) { connector in
+                    MCPConnectorRow(connector: connector, model: model)
+                    if connector.id != model.mcpConnectors.last?.id {
+                        Divider().overlay(StudioPalette.line)
+                    }
+                }
+                if model.mcpConnectors.isEmpty {
+                    Text("No MCP connectors are available from the engine yet.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(StudioPalette.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
+            }
+            .background(StudioPalette.panel.opacity(0.65))
+            .clipShape(RoundedRectangle(cornerRadius: 3))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+
+            Text("Built-in OAuth connectors are Gmail, Google Calendar, Google Drive, Slack, and Notion. Other registry MCP servers can still be registered by URL through the engine API.")
+                .font(.system(size: 12))
+                .foregroundStyle(StudioPalette.muted)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("External MCP Server")
+                    .font(.system(size: 14).weight(.semibold))
+                HStack {
+                    TextField("app name", text: $externalMCPName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 180)
+                    TextField("http://127.0.0.1:9009", text: $externalMCPURL)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        Task {
+                            await model.registerExternalMCP(app: externalMCPName, url: externalMCPURL)
+                        }
+                    } label: {
+                        Label("register", systemImage: "plus.circle")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+                Text("External servers are verified with tools/list before they are saved.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StudioPalette.muted)
+            }
+            .padding(.top, 4)
+        }
+        .padding(18)
+        .background(StudioPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 3))
+        .overlay(RoundedRectangle(cornerRadius: 3).stroke(StudioPalette.line))
+    }
+
     private var providerDetail: String {
         switch model.brainConfig.provider {
         case "ollama": return "Nexus can start Ollama if it is installed. Use prepare now to pull the selected model before chatting."
         case "lmstudio": return "Use prepare now to start the LM Studio server, download the selected model if needed, and load it."
         default: return "Paste a model name and key. The endpoint defaults to OpenAI and can be changed for any OpenAI-compatible provider."
+        }
+    }
+}
+
+private struct MCPConnectorRow: View {
+    var connector: MCPConnector
+    @Bindable var model: StudioModel
+
+    private var stateText: String {
+        if connector.reachable != true { return "Bridge offline" }
+        if connector.auth?.connected == true { return "Connected" }
+        if connector.auth?.connectReady == true { return "Ready to approve" }
+        return "Server setup needed"
+    }
+
+    private var detailText: String {
+        if let error = connector.error, connector.reachable != true { return error }
+        if connector.auth?.connected == true {
+            return connector.auth?.verifiedAt.map { "Verified \($0)" } ?? "Provider test has passed."
+        }
+        if connector.auth?.connectReady == true {
+            return "Open OAuth, approve access, then run Test."
+        }
+        let missing = connector.auth?.connectMissing ?? connector.auth?.missing ?? []
+        return missing.isEmpty ? "OAuth app credentials are missing on the Nexus server." : "Missing \(missing.joined(separator: ", "))"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: connectorIcon)
+                .font(.system(size: 18, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .foregroundStyle(connector.auth?.connected == true ? StudioPalette.accentBright : StudioPalette.muted)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(connector.label)
+                        .font(.system(size: 14).weight(.semibold))
+                    Text(stateText)
+                        .font(.system(size: 11).weight(.medium))
+                        .foregroundStyle(connector.auth?.connected == true ? StudioPalette.accentBright : StudioPalette.muted)
+                }
+                Text(detailText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(StudioPalette.muted)
+                    .lineLimit(2)
+                Text(connector.tools.joined(separator: ", "))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(StudioPalette.muted.opacity(0.85))
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button {
+                Task {
+                    do {
+                        let url = try await model.connectMCP(connector)
+                        NSWorkspace.shared.open(url)
+                    } catch {
+                        model.mcpStatus = "\(connector.label) connect failed: \(error.localizedDescription)"
+                    }
+                }
+            } label: {
+                Label("connect", systemImage: "arrow.up.forward.app")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(connector.reachable != true || connector.auth?.connectReady != true)
+
+            Button {
+                Task { await model.testMCP(connector) }
+            } label: {
+                Label("test", systemImage: "checkmark.seal")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(connector.reachable != true || connector.auth?.ok != true)
+        }
+        .padding(14)
+    }
+
+    private var connectorIcon: String {
+        switch connector.provider {
+        case "google": return "g.circle"
+        case "slack": return "number"
+        case "notion": return "doc.text"
+        default: return "server.rack"
         }
     }
 }

@@ -349,6 +349,59 @@ public struct BrainCatalog: Equatable, Sendable {
     public init() {}
 }
 
+public struct MCPConnectorAuth: Codable, Equatable, Sendable {
+    public var ok: Bool?
+    public var connected: Bool?
+    public var verifiedAt: String?
+    public var readOnly: Bool?
+    public var connectReady: Bool?
+    public var connectMissing: [String]?
+    public var missing: [String]?
+}
+
+public struct MCPConnector: Codable, Identifiable, Equatable, Sendable {
+    public var app: String
+    public var label: String
+    public var provider: String
+    public var url: String
+    public var connectUrl: String
+    public var healthUrl: String
+    public var testUrl: String
+    public var tools: [String]
+    public var reachable: Bool?
+    public var ok: Bool?
+    public var auth: MCPConnectorAuth?
+    public var state: String?
+    public var error: String?
+
+    public var id: String { app }
+}
+
+public struct MCPConnectResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var app: String
+    public var provider: String?
+    public var label: String?
+    public var authUrl: String?
+    public var redirectUri: String?
+    public var error: String?
+}
+
+public struct MCPTestResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var app: String?
+    public var provider: String?
+    public var tested: String?
+    public var scopes: [String]?
+    public var teamId: String?
+    public var userId: String?
+    public var workspaceName: String?
+}
+
+public struct MCPRegisterResponse: Codable, Equatable, Sendable {
+    public var found: Int
+}
+
 public protocol WorkflowEngineClientProtocol: Sendable {
     func generateNode(intent: String, context: [String: JSONValue]) async throws -> ExecutableNode
     func runNode(_ node: ExecutableNode, context: [String: JSONValue]) async throws -> EngineRunResult
@@ -358,6 +411,10 @@ public protocol WorkflowEngineClientProtocol: Sendable {
     func clearNodes() async throws
     func completeWithNex(prompt: String, brain: BrainConfig) async throws -> String
     func prepareBrain(_ brain: BrainConfig) async throws -> String
+    func listMCPConnectors() async throws -> [MCPConnector]
+    func connectMCP(app: String) async throws -> MCPConnectResponse
+    func testMCP(app: String) async throws -> MCPTestResponse
+    func registerMCP(app: String, url: String) async throws -> MCPRegisterResponse
 }
 
 public extension WorkflowEngineClientProtocol {
@@ -368,6 +425,16 @@ public extension WorkflowEngineClientProtocol {
     }
     func prepareBrain(_ brain: BrainConfig) async throws -> String {
         throw EngineClientError.requestFailed("Brain preparation is unavailable for this engine client")
+    }
+    func listMCPConnectors() async throws -> [MCPConnector] { [] }
+    func connectMCP(app: String) async throws -> MCPConnectResponse {
+        throw EngineClientError.requestFailed("MCP connectors are unavailable for this engine client")
+    }
+    func testMCP(app: String) async throws -> MCPTestResponse {
+        throw EngineClientError.requestFailed("MCP connector tests are unavailable for this engine client")
+    }
+    func registerMCP(app: String, url: String) async throws -> MCPRegisterResponse {
+        throw EngineClientError.requestFailed("MCP registration is unavailable for this engine client")
     }
 }
 
@@ -412,6 +479,37 @@ public struct WorkflowEngineClient: WorkflowEngineClientProtocol, Sendable {
 
     public func prepareBrain(_ brain: BrainConfig) async throws -> String {
         try await request(path: "/brain/prepare", body: BrainRequest(brain: brain), response: BrainPrepareResponse.self).status
+    }
+
+    public func listMCPConnectors() async throws -> [MCPConnector] {
+        try await get(path: "/mcp/status", response: MCPStatusResponse.self).connectors
+    }
+
+    public func connectMCP(app: String) async throws -> MCPConnectResponse {
+        try await get(path: "/mcp/connect/\(app)", response: MCPConnectResponse.self)
+    }
+
+    public func testMCP(app: String) async throws -> MCPTestResponse {
+        try await request(path: "/mcp/test/\(app)", body: EmptyRequest(), response: MCPTestResponse.self)
+    }
+
+    public func registerMCP(app: String, url: String) async throws -> MCPRegisterResponse {
+        try await request(path: "/mcp/register", body: MCPRegisterRequest(app: app, url: url), response: MCPRegisterResponse.self)
+    }
+
+    private func get<Response: Decodable>(path: String, response: Response.Type) async throws -> Response {
+        let (data, urlResponse) = try await URLSession.shared.data(from: baseURL.appendingPathComponent(path))
+        guard let httpResponse = urlResponse as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
+            throw EngineClientError.requestFailed(String(data: data, encoding: .utf8) ?? "Request failed")
+        }
+        do {
+            return try JSONDecoder().decode(Response.self, from: data)
+        } catch {
+            if let payload = try? JSONDecoder().decode(ErrorResponse.self, from: data) {
+                throw EngineClientError.requestFailed(payload.error)
+            }
+            throw error
+        }
     }
 
     private func request<Request: Encodable, Response: Decodable>(path: String, body: Request, response: Response.Type) async throws -> Response {
@@ -473,6 +571,15 @@ private struct BrainRequest: Encodable {
 
 private struct BrainPrepareResponse: Decodable {
     var status: String
+}
+
+private struct MCPStatusResponse: Decodable {
+    var connectors: [MCPConnector]
+}
+
+private struct MCPRegisterRequest: Encodable {
+    var app: String
+    var url: String
 }
 
 private struct ErrorResponse: Decodable {
@@ -570,6 +677,8 @@ public final class StudioModel {
     public var brainConfig = BrainConfig()
     public let brainCatalog = BrainCatalog()
     public var brainStatus = "Ready"
+    public var mcpConnectors: [MCPConnector] = []
+    public var mcpStatus = "Ready"
     private let engineClient: any WorkflowEngineClientProtocol
     private var scheduleTimer: Timer?
     private var lastScheduleRuns: [String: Date] = [:]
@@ -924,10 +1033,62 @@ public final class StudioModel {
         guard let data = UserDefaults.standard.data(forKey: brainConfigKey),
               let decoded = try? JSONDecoder().decode(BrainConfig.self, from: data) else {
             brainStatus = "Ready"
+            await refreshMCPConnectors()
             return
         }
         brainConfig = decoded
         brainStatus = "Loaded"
+        await refreshMCPConnectors()
+    }
+
+    public func refreshMCPConnectors() async {
+        do {
+            mcpConnectors = try await engineClient.listMCPConnectors()
+            let connected = mcpConnectors.filter { $0.auth?.connected == true }.count
+            let reachable = mcpConnectors.filter { $0.reachable == true }.count
+            mcpStatus = "\(connected)/\(mcpConnectors.count) connected, \(reachable) online"
+        } catch {
+            mcpStatus = error.localizedDescription
+        }
+    }
+
+    public func connectMCP(_ connector: MCPConnector) async throws -> URL {
+        mcpStatus = "Opening \(connector.label)..."
+        let response = try await engineClient.connectMCP(app: connector.app)
+        guard response.ok, let authUrl = response.authUrl, let url = URL(string: authUrl) else {
+            throw EngineClientError.requestFailed(response.error ?? "MCP connector did not return an authorization URL")
+        }
+        mcpStatus = "Approve \(connector.label) in the browser"
+        return url
+    }
+
+    public func testMCP(_ connector: MCPConnector) async {
+        mcpStatus = "Testing \(connector.label)..."
+        do {
+            let result = try await engineClient.testMCP(app: connector.app)
+            mcpStatus = "\(connector.label) test passed: \(result.tested ?? "provider check")"
+            await refreshMCPConnectors()
+        } catch {
+            mcpStatus = "\(connector.label) test failed: \(error.localizedDescription)"
+            await refreshMCPConnectors()
+        }
+    }
+
+    public func registerExternalMCP(app: String, url: String) async {
+        let name = app.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endpoint = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !endpoint.isEmpty else {
+            mcpStatus = "External MCP needs an app name and URL"
+            return
+        }
+        mcpStatus = "Registering \(name)..."
+        do {
+            let result = try await engineClient.registerMCP(app: name, url: endpoint)
+            mcpStatus = "Registered \(name): \(result.found) tool(s) found"
+            await refreshMCPConnectors()
+        } catch {
+            mcpStatus = "External MCP failed: \(error.localizedDescription)"
+        }
     }
 
     public func selectBrainProvider(_ provider: String) {

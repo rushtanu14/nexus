@@ -18,7 +18,7 @@ import { PetSpawner } from "../src/pets/PetSpawner.js";
 import { configureRunners, resetRunners, RUNNERS } from "../src/runners/index.js";
 import { createServer } from "../src/server.js";
 import { ActionStore } from "../src/store/ActionStore.js";
-import { BRIDGES, createMcpServer, handleJsonRpc } from "../scripts/nexus-mcp-bridge.mjs";
+import { BRIDGES, createMcpServer, handleJsonRpc, testConnector } from "../scripts/nexus-mcp-bridge.mjs";
 import { loadMcpSecrets, providerAuthStatus, saveProviderSecrets } from "../scripts/mcp-secret-store.mjs";
 
 test.beforeEach(async () => {
@@ -328,6 +328,18 @@ test("mcp bridge: file-backed secrets drive real provider API calls", async () =
     assert(calls.some((call) => call.url.includes("gmail.googleapis.com/gmail/v1/users/me/drafts")));
     assert(calls.some((call) => call.url.includes("slack.com/api/search.messages")));
     assert(calls.every((call) => !call.url.includes("chat.postMessage")));
+
+    const googleTest = await testConnector("google-drive", env);
+    assert.equal(googleTest.ok, true);
+    assert.equal(googleTest.tested, "tokeninfo");
+
+    const slackTest = await testConnector("slack", env);
+    assert.equal(slackTest.ok, true);
+    assert.equal(slackTest.tested, "auth.test");
+
+    const notionTest = await testConnector("notion", env);
+    assert.equal(notionTest.ok, true);
+    assert.equal(notionTest.tested, "users/me");
   } finally {
     globalThis.fetch = originalFetch;
     await fs.rm(dir, { recursive: true, force: true });
@@ -429,6 +441,28 @@ test("api: health advertises echo action compatibility", async () => {
     assert.equal(response.status, 200);
     assert.equal(payload.features.echoActions, true);
     assert.equal(payload.features.echoMCPWorkflows, true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("api: mcp connector catalog reports built-ins and default registrations", async () => {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const catalogResponse = await fetch(`http://127.0.0.1:${port}/mcp/catalog`);
+    const catalog = await catalogResponse.json();
+    assert.equal(catalogResponse.status, 200);
+    assert(catalog.connectors.some((connector) => connector.app === "gmail" && connector.connectUrl.includes("/connect")));
+    assert(catalog.connectors.some((connector) => connector.app === "google-drive" && connector.testUrl.includes("/test")));
+    assert.equal(catalog.registered.gmail, "http://127.0.0.1:9001");
+
+    const statusResponse = await fetch(`http://127.0.0.1:${port}/mcp/status`);
+    const status = await statusResponse.json();
+    assert.equal(statusResponse.status, 200);
+    assert.equal(status.connectors.length, Object.keys(BRIDGES).length);
+    assert(status.connectors.every((connector) => connector.state));
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -756,12 +790,12 @@ test("api: echo action run reports missing MCP registration", async () => {
     const action = {
       id: crypto.randomUUID(),
       kind: "email_follow_up",
-      provider: "Gmail",
-      title: "Draft follow-up email",
-      summary: "Prepare email",
+      provider: "Custom MCP",
+      title: "Run custom action",
+      summary: "Prepare custom MCP call",
       confidence: 0.8,
       status: "suggested",
-      mcp: { server: "gmail", tool: "draft_email", inputs: { body: "hello" } }
+      mcp: { server: "unregistered-custom", tool: "do_work", inputs: { body: "hello" } }
     };
     const response = await fetch(`http://127.0.0.1:${port}/echo/action/run`, {
       method: "POST",
