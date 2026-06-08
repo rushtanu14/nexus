@@ -48,8 +48,6 @@ async function saveGoogleFromEnv() {
   const result = await saveProviderSecrets("google", {
     clientId: process.env.GOOGLE_CLIENT_ID ?? process.env.GMAIL_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? process.env.GMAIL_CLIENT_SECRET,
-    refreshToken: process.env.GOOGLE_REFRESH_TOKEN,
-    accessToken: process.env.GOOGLE_ACCESS_TOKEN,
     calendarId: process.env.GOOGLE_CALENDAR_ID,
     calendarTimeZone: process.env.GOOGLE_CALENDAR_TIME_ZONE
   });
@@ -59,9 +57,7 @@ async function saveGoogleFromEnv() {
 async function saveSlackFromEnv() {
   const result = await saveProviderSecrets("slack", {
     clientId: process.env.SLACK_CLIENT_ID,
-    clientSecret: process.env.SLACK_CLIENT_SECRET,
-    userToken: process.env.SLACK_USER_TOKEN,
-    botToken: process.env.SLACK_BOT_TOKEN
+    clientSecret: process.env.SLACK_CLIENT_SECRET
   });
   console.log(`saved slack keys: ${result.keys.join(", ")}`);
 }
@@ -70,7 +66,6 @@ async function saveNotionFromEnv() {
   const result = await saveProviderSecrets("notion", {
     clientId: process.env.NOTION_CLIENT_ID,
     clientSecret: process.env.NOTION_CLIENT_SECRET,
-    token: process.env.NOTION_TOKEN ?? process.env.NOTION_API_KEY,
     parentPageId: process.env.NOTION_PARENT_PAGE_ID,
     databaseId: process.env.NOTION_DATABASE_ID,
     titleProperty: process.env.NOTION_TITLE_PROPERTY
@@ -79,9 +74,9 @@ async function saveNotionFromEnv() {
 }
 
 async function saveAllFromEnv() {
-  if (process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_CLIENT_ID || process.env.GOOGLE_ACCESS_TOKEN || process.env.GOOGLE_REFRESH_TOKEN) await saveGoogleFromEnv();
-  if (process.env.SLACK_CLIENT_ID || process.env.SLACK_USER_TOKEN || process.env.SLACK_BOT_TOKEN) await saveSlackFromEnv();
-  if (process.env.NOTION_CLIENT_ID || process.env.NOTION_TOKEN || process.env.NOTION_API_KEY) await saveNotionFromEnv();
+  if (process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_CLIENT_ID) await saveGoogleFromEnv();
+  if (process.env.SLACK_CLIENT_ID) await saveSlackFromEnv();
+  if (process.env.NOTION_CLIENT_ID) await saveNotionFromEnv();
 }
 
 async function googleLogin() {

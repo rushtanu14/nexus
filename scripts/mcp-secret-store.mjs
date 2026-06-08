@@ -34,8 +34,8 @@ export async function loadMcpSecrets(env = process.env) {
     google: {
       clientId: env.GOOGLE_CLIENT_ID ?? env.GMAIL_CLIENT_ID ?? googleFile.clientId ?? googleFile.client_id,
       clientSecret: env.GOOGLE_CLIENT_SECRET ?? env.GMAIL_CLIENT_SECRET ?? googleFile.clientSecret ?? googleFile.client_secret,
-      refreshToken: env.GOOGLE_REFRESH_TOKEN ?? googleFile.refreshToken ?? googleFile.refresh_token,
-      accessToken: env.GOOGLE_ACCESS_TOKEN ?? googleFile.accessToken ?? googleFile.access_token,
+      refreshToken: googleFile.refreshToken ?? googleFile.refresh_token,
+      accessToken: googleFile.accessToken ?? googleFile.access_token,
       calendarId: env.GOOGLE_CALENDAR_ID ?? googleFile.calendarId ?? googleFile.calendar_id,
       calendarTimeZone: env.GOOGLE_CALENDAR_TIME_ZONE ?? googleFile.calendarTimeZone ?? googleFile.calendar_time_zone,
       verifiedAt: googleFile.verifiedAt ?? googleFile.verified_at
@@ -43,14 +43,14 @@ export async function loadMcpSecrets(env = process.env) {
     slack: {
       clientId: env.SLACK_CLIENT_ID ?? slackFile.clientId ?? slackFile.client_id,
       clientSecret: env.SLACK_CLIENT_SECRET ?? slackFile.clientSecret ?? slackFile.client_secret,
-      userToken: env.SLACK_USER_TOKEN ?? slackFile.userToken ?? slackFile.user_token,
-      botToken: env.SLACK_BOT_TOKEN ?? slackFile.botToken ?? slackFile.bot_token,
+      userToken: slackFile.userToken ?? slackFile.user_token,
+      botToken: slackFile.botToken ?? slackFile.bot_token,
       verifiedAt: slackFile.verifiedAt ?? slackFile.verified_at
     },
     notion: {
       clientId: env.NOTION_CLIENT_ID ?? notionFile.clientId ?? notionFile.client_id,
       clientSecret: env.NOTION_CLIENT_SECRET ?? notionFile.clientSecret ?? notionFile.client_secret,
-      token: env.NOTION_TOKEN ?? env.NOTION_API_KEY ?? notionFile.token ?? notionFile.apiKey ?? notionFile.api_key,
+      token: notionFile.token ?? notionFile.apiKey ?? notionFile.api_key,
       parentPageId: env.NOTION_PARENT_PAGE_ID ?? notionFile.parentPageId ?? notionFile.parent_page_id,
       databaseId: env.NOTION_DATABASE_ID ?? notionFile.databaseId ?? notionFile.database_id,
       titleProperty: env.NOTION_TITLE_PROPERTY ?? notionFile.titleProperty ?? notionFile.title_property,
