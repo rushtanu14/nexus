@@ -79,23 +79,35 @@
 
 ## start
 
+<details open>
+<summary><b>quick start</b></summary>
+
+<br/>
+
 ```bash
 docker compose up -d --build && ./run.sh
 ```
 
 starts Nexus, Ollama, Qdrant, default models, and the native app.
 
-| service | url                        |
-| ------- | -------------------------- |
-| engine  | `127.0.0.1:3131`           |
-| ollama  | `127.0.0.1:11434`          |
-| qdrant  | `127.0.0.1:6333/dashboard` |
+| service | url |
+|----------|----------|
+| engine | `127.0.0.1:3131` |
+| ollama | `127.0.0.1:11434` |
+| qdrant | `127.0.0.1:6333/dashboard` |
 
 switch models:
 
 ```bash
 OLLAMA_MODEL=qwen2.5-coder:7b docker compose up -d
 ```
+
+</details>
+
+<details>
+<summary><b>mcp registration</b></summary>
+
+<br/>
 
 register an MCP:
 
@@ -111,22 +123,27 @@ start the built-in local provider bridge:
 npm run mcp:bridge
 ```
 
-then, in another terminal with the Nexus engine running:
+then:
 
 ```bash
 npm run mcp:register
 curl http://127.0.0.1:3131/mcp/list
 ```
 
-| app                | bridge port | connect type |
-| ------------------ | ----------- | ------------ |
-| `gmail`            | `9001`      | Google OAuth |
-| `google-workspace` | `9002`      | Google OAuth |
-| `google-drive`     | `9003`      | Google OAuth |
-| `slack`            | `9004`      | Slack OAuth, read-only scopes |
-| `notion`           | `9005`      | Notion OAuth |
+| app | bridge port | connect type |
+|------|------|------|
+| `gmail` | `9001` | Google OAuth |
+| `google-workspace` | `9002` | Google OAuth |
+| `google-drive` | `9003` | Google OAuth |
+| `slack` | `9004` | Slack OAuth (read-only) |
+| `notion` | `9005` | Notion OAuth |
 
-The bridge exposes tools before a user connects, but a connector is only marked connected after OAuth completes and a provider test call succeeds. User credentials are stored under ignored `.nexus-data/mcp-secrets/` files on the Nexus server.
+</details>
+
+<details>
+<summary><b>connectors & oauth</b></summary>
+
+<br/>
 
 Universal connect page:
 
@@ -134,48 +151,68 @@ Universal connect page:
 http://127.0.0.1:9001/connectors
 ```
 
-Each connector has one Connect button. OAuth connectors redirect to the provider approval page and return to `/oauth/callback`; local-only connectors should verify the local server/process before they are marked connected. Credentials are stored under ignored `.nexus-data/mcp-secrets/` files on the Nexus server, never in the client UI.
+The bridge exposes tools before a user connects, but a connector is only marked connected after OAuth completes and a provider test call succeeds.
 
-Server operators configure OAuth apps once. Users should never paste tokens, client IDs, or secrets into Nexus. If a connector is not configured, `/connect` shows a clear server configuration error instead of asking the user for secrets.
+Credentials are stored under:
 
-Provider redirect URIs for local development:
+```text
+.nexus-data/mcp-secrets/
+```
+
+Users never paste API keys, OAuth tokens, client IDs, or client secrets.
+
+If a connector is not configured, Nexus displays a setup error instead of requesting secrets.
+
+### Local Redirect URIs
 
 | connector | redirect URI |
-| --------- | ------------ |
+|----------|----------|
 | Gmail | `http://127.0.0.1:9001/oauth/callback` |
 | Google Calendar | `http://127.0.0.1:9002/oauth/callback` |
 | Google Drive | `http://127.0.0.1:9003/oauth/callback` |
 | Slack | `http://127.0.0.1:9004/oauth/callback` |
 | Notion | `http://127.0.0.1:9005/oauth/callback` |
 
-Slack stays read-only: it can preview a drafted update locally and can read channels/messages when OAuth grants read scopes, but it has no post/send tool.
+Slack remains read-only.
 
----
+</details>
 
-## api
+<details>
+<summary><b>api</b></summary>
+
+<br/>
 
 ```text
-POST /node/generate   POST /node/save      GET  /node/list
-POST /node/run        POST /nex/complete   POST /brain/prepare
+POST /node/generate
+POST /node/save
+GET  /node/list
+
+POST /node/run
+POST /nex/complete
+POST /brain/prepare
+
 GET  /memory/health
 ```
 
----
-
-## configuration
-
-| variable               | default            |
-| ---------------------- | ------------------ |
-| `PORT`                 | `3131`             |
-| `OLLAMA_MODEL`         | `qwen2.5-coder:1.5b` |
-| `NEXUS_MEMORY_ENABLED` | `1`                |
-| `NEXUS_QDRANT_URL`     | `127.0.0.1:6333`   |
-| `OLLAMA_BASE_URL`      | `127.0.0.1:11434`  |
-
----
+</details>
 
 <details>
-<summary>development</summary>
+<summary><b>configuration</b></summary>
+
+<br/>
+
+| variable | default |
+|----------|----------|
+| `PORT` | `3131` |
+| `OLLAMA_MODEL` | `qwen2.5-coder:1.5b` |
+| `NEXUS_MEMORY_ENABLED` | `1` |
+| `NEXUS_QDRANT_URL` | `127.0.0.1:6333` |
+| `OLLAMA_BASE_URL` | `127.0.0.1:11434` |
+
+</details>
+
+<details>
+<summary><b>development</b></summary>
 
 <br/>
 
