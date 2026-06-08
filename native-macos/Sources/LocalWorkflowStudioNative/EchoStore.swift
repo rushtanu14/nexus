@@ -788,7 +788,7 @@ final class NexVoiceStore {
                         self?.response = reply
                         NexSpeechOutput.shared.speak(reply)
                     } catch {
-                        self?.response = error.localizedDescription
+                        self?.response = self?.safeNexError(error) ?? "Local AI is unavailable."
                     }
                 }
             })
@@ -841,5 +841,13 @@ final class NexVoiceStore {
     private func automationProcessSummary(_ prompt: String) -> String {
         let compact = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         return "Yes, I'll get on \(compact) by turning it into a local workflow, routing it through the automation builder, and showing the editable node before anything runs."
+    }
+
+    private func safeNexError(_ error: Error) -> String {
+        let message = error.localizedDescription
+        if message.contains("{") || message.contains("HTTP 500") || message.localizedCaseInsensitiveContains("MTLLibraryErrorDomain") || message.localizedCaseInsensitiveContains("ggml_metal") {
+            return "Local models unavailable - check system resources."
+        }
+        return message
     }
 }
