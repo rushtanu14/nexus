@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 
 export const DEFAULT_OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
@@ -119,9 +119,18 @@ async function restartOllamaCpuOnly(baseUrl) {
     ollamaProcess.kill("SIGTERM");
     ollamaProcess = null;
     await sleep(1000);
+  } else {
+    await stopExternalOllama();
   }
   startOllama({ cpuOnly: true, force: true });
   await waitForOllama(baseUrl, Number(process.env.NEXUS_OLLAMA_START_TIMEOUT_MS ?? 30000));
+}
+
+async function stopExternalOllama() {
+  await new Promise((resolve) => {
+    execFile("/usr/bin/pkill", ["-x", "ollama"], () => resolve());
+  });
+  await sleep(1000);
 }
 
 function startOllama({ cpuOnly = false, force = false } = {}) {
