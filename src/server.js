@@ -16,6 +16,7 @@ import { ensureOllamaReady, ollamaBaseUrl as runtimeOllamaBaseUrl, ollamaChatWit
 import { PetSpawner } from "./pets/PetSpawner.js";
 import { actionStore } from "./store/ActionStore.js";
 import { BRIDGES } from "../scripts/nexus-mcp-bridge.mjs";
+import { deleteProviderSecrets } from "../scripts/mcp-secret-store.mjs";
 
 const MCP_HOST = process.env.NEXUS_MCP_HOST ?? "127.0.0.1";
 const BUILT_IN_MCP_CONNECTORS = Object.entries(BRIDGES).map(([app, bridge]) => ({
@@ -244,23 +245,39 @@ export function createApp() {
   app.get("/mcp/list", asyncRoute(async (_request, response) => {
     response.json(await listServers());
   }));
-  app.get("/mcp/catalog", asyncRoute(async (_request, response) => {
+  app.get(["/mcp/catalog", "/api/mcp/catalog"], asyncRoute(async (_request, response) => {
     response.json({ connectors: BUILT_IN_MCP_CONNECTORS, registered: await listServers() });
   }));
-  app.get("/mcp/status", asyncRoute(async (_request, response) => {
+  app.get(["/mcp/status", "/api/mcp/status"], asyncRoute(async (_request, response) => {
     response.json({
       connectors: await Promise.all(BUILT_IN_MCP_CONNECTORS.map(connectorStatus)),
       registered: await listServers()
     });
   }));
-  app.get("/mcp/connect/:app", asyncRoute(async (request, response) => {
+  app.get(["/mcp/connect/:app", "/api/mcp/connect/:app"], asyncRoute(async (request, response) => {
     const connector = connectorForApp(request.params.app);
     const payload = await fetchConnectorJson(`${connector.connectUrl}?format=json`);
     response.json({ ...payload, app: connector.app, label: connector.label });
   }));
-  app.post("/mcp/test/:app", asyncRoute(async (request, response) => {
+  app.get("/api/mcp/callback/:app", asyncRoute(async (request, response) => {
+    const connector = connectorForApp(request.params.app);
+    const target = new URL(`${connector.url}/oauth/callback`);
+    for (const [key, value] of Object.entries(request.query)) {
+      if (Array.isArray(value)) {
+        for (const item of value) target.searchParams.append(key, item);
+      } else if (value !== undefined) {
+        target.searchParams.set(key, String(value));
+      }
+    }
+    response.redirect(target.toString());
+  }));
+  app.post(["/mcp/test/:app", "/api/mcp/test/:app"], asyncRoute(async (request, response) => {
     const connector = connectorForApp(request.params.app);
     response.json(await fetchConnectorJson(connector.testUrl));
+  }));
+  app.post("/api/mcp/disconnect/:app", asyncRoute(async (request, response) => {
+    const connector = connectorForApp(request.params.app);
+    response.json(await disconnectConnector(connector));
   }));
 
   app.use((_request, response) => response.status(404).json({ error: "not_found" }));
@@ -313,6 +330,12 @@ async function fetchConnectorJson(url, { timeoutMs = 5000 } = {}) {
     throw new Error(payload.error?.message ?? payload.error ?? `MCP connector request failed with HTTP ${response.status}`);
   }
   return payload;
+}
+
+async function disconnectConnector(connector) {
+  const provider = connector.provider;
+  const result = await deleteProviderSecrets(provider);
+  return { ok: true, app: connector.app, provider, ...result };
 }
 
 async function ollamaStatus() {

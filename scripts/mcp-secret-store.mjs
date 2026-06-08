@@ -72,6 +72,13 @@ export async function saveProviderSecrets(provider, values, env = process.env) {
   return { provider, keys: Object.keys(cleaned), path: path.join(dir, PROVIDER_FILES[provider]) };
 }
 
+export async function deleteProviderSecrets(provider, env = process.env) {
+  if (!PROVIDER_FILES[provider]) throw new Error(`Unknown MCP secret provider: ${provider}`);
+  const file = path.join(secretDir(env), PROVIDER_FILES[provider]);
+  await fs.rm(file, { force: true });
+  return { provider, deleted: true };
+}
+
 export async function providerAuthStatus(env = process.env) {
   const secrets = await loadMcpSecrets(env);
   return {
