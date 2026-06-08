@@ -12,6 +12,7 @@ import { createLifePlan } from "./life-assistant.js";
 import { createMemoryStore } from "./memory-store.js";
 import { listServers, registerServer, scrapeServer } from "./mcp-registry.js";
 import { clearNodes, deleteNode, listNodes, saveNode } from "./node-store.js";
+import { ensureOllamaReady, ollamaBaseUrl as runtimeOllamaBaseUrl, ollamaChatWithFallback, ollamaHealthCheck } from "./ollama-runtime.js";
 import { PetSpawner } from "./pets/PetSpawner.js";
 import { actionStore } from "./store/ActionStore.js";
 import { BRIDGES } from "../scripts/nexus-mcp-bridge.mjs";
@@ -225,6 +226,9 @@ export function createApp() {
   app.post("/brain/prepare", asyncRoute(async (request, response) => {
     response.json({ status: await prepareBrain(request.body.brain ?? {}) });
   }));
+  app.post("/brain/health", asyncRoute(async (request, response) => {
+    response.json(await brainHealth(request.body.brain ?? {}));
+  }));
   app.post("/mcp/register", asyncRoute(async (request, response) => {
     await registerServer(request.body.app, request.body.url);
     await optionalRemember({
@@ -376,47 +380,59 @@ async function completeWithNex(prompt, brain, memoryContext) {
   ].join("\n\n");
 
   if (provider === "ollama") {
-    const baseUrl = ollamaBaseUrl(brain.baseUrl);
-    const response = await fetch(`${baseUrl}/api/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
-      signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000))
-    });
-    if (!response.ok) throw new Error(`Nex model request failed with HTTP ${response.status}: ${await response.text()}`);
-    const payload = await response.json();
-    if (!payload.message?.content) throw new Error("Nex model returned no content");
-    return payload.message.content;
+    const baseUrl = runtimeOllamaBaseUrl(brain.baseUrl);
+    try {
+      const result = await ollamaChatWithFallback({
+        baseUrl,
+        preferredModel: model,
+        timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000),
+        body: {
+          stream: false,
+          messages: [{ role: "system", content: system }, { role: "user", content: prompt }]
+        }
+      });
+      if (!result.payload.message?.content) throw new Error("Nex model returned no content");
+      return result.payload.message.content;
+    } catch (error) {
+      console.error("[nexus] Nex local model request failed", error.details ?? error);
+      throw new Error("Local models unavailable - check system resources");
+    }
   }
 
   const baseUrl = String(brain.baseUrl || (provider === "lmstudio" ? "http://127.0.0.1:1234/v1" : "https://api.openai.com/v1")).replace(/\/$/, "");
   const headers = { "content-type": "application/json" };
   if (brain.apiKey) headers.authorization = `Bearer ${brain.apiKey}`;
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
-    signal: AbortSignal.timeout(Number(process.env.NEXUS_CHAT_TIMEOUT_MS ?? 120000))
-  });
-  if (!response.ok) throw new Error(`Nex model request failed with HTTP ${response.status}: ${await response.text()}`);
-  const payload = await response.json();
-  if (!payload.choices?.[0]?.message?.content) throw new Error("Nex model returned no content");
-  return payload.choices[0].message.content;
+  const candidates = openAICompatibleModelCandidates(model, provider);
+  const errors = [];
+  for (const candidate of candidates) {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model: candidate, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+      signal: AbortSignal.timeout(Number(process.env.NEXUS_CHAT_TIMEOUT_MS ?? 120000))
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      errors.push(`${candidate}: HTTP ${response.status}: ${detail}`);
+      console.error(`[nexus] ${provider} model failed; trying fallback if available`, errors.at(-1));
+      continue;
+    }
+    const payload = await response.json();
+    if (payload.choices?.[0]?.message?.content) return payload.choices[0].message.content;
+    errors.push(`${candidate}: no content`);
+  }
+  console.error("[nexus] Nex compatible model request failed", errors);
+  throw new Error(provider === "lmstudio" ? "Local models unavailable - check system resources" : "Configured AI provider is unavailable");
 }
 
 async function prepareBrain(brain) {
   const provider = brain.provider ?? "ollama";
   const model = brain.model || OLLAMA_MODEL;
   if (provider === "ollama") {
-    const baseUrl = ollamaBaseUrl(brain.baseUrl);
-    const response = await fetch(`${baseUrl}/api/pull`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model, stream: false }),
-      signal: AbortSignal.timeout(Number(process.env.NEXUS_PREPARE_TIMEOUT_MS ?? 600000))
-    });
-    if (!response.ok) throw new Error(`Ollama could not prepare ${model}: ${await response.text()}`);
-    return `Prepared ${model} with Ollama`;
+    const baseUrl = runtimeOllamaBaseUrl(brain.baseUrl);
+    const ready = await ensureOllamaReady({ baseUrl, model });
+    const health = await ollamaHealthCheck({ baseUrl, model });
+    return `Prepared ${health.model || ready.model} with Ollama${health.cpuOnly ? " (CPU mode - GPU unavailable)" : ""}`;
   }
   if (provider === "lmstudio") {
     const executable = lmStudioExecutable();
@@ -432,6 +448,23 @@ async function prepareBrain(brain) {
     return `Prepared ${model} with LM Studio`;
   }
   return "OpenAI-compatible providers do not require local preparation";
+}
+
+async function brainHealth(brain) {
+  const provider = brain.provider ?? "ollama";
+  const model = brain.model || OLLAMA_MODEL;
+  if (provider === "ollama") return ollamaHealthCheck({ baseUrl: runtimeOllamaBaseUrl(brain.baseUrl), model });
+  if (provider === "lmstudio") return { ok: await isOpenAICompatibleReachable(String(brain.baseUrl || "http://127.0.0.1:1234/v1").replace(/\/$/, "")), model };
+  return { ok: true, model, remote: true };
+}
+
+function openAICompatibleModelCandidates(preferredModel, provider) {
+  const configured = String(process.env.NEXUS_COMPATIBLE_FALLBACK_MODELS ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const localDefaults = provider === "lmstudio" ? ["qwen2.5-coder-7b-instruct", "llama-3.2-3b-instruct", "gemma-3-4b-it"] : [];
+  return [...new Set([preferredModel, ...configured, ...localDefaults].filter(Boolean))];
 }
 
 function lmStudioExecutable() {
@@ -477,9 +510,7 @@ async function isOpenAICompatibleReachable(baseUrl) {
 }
 
 function ollamaBaseUrl(configuredBaseUrl) {
-  const configured = String(configuredBaseUrl ?? "").trim();
-  if (!configured || configured.includes("api.openai.com")) return OLLAMA_BASE_URL;
-  return configured.replace(/\/$/, "");
+  return runtimeOllamaBaseUrl(configuredBaseUrl);
 }
 
 async function ensureMemoryOnLaunch() {

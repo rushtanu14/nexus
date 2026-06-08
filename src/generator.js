@@ -1,14 +1,15 @@
 import crypto from "node:crypto";
 import { findNode, saveNode } from "./node-store.js";
 import { templateReferences, validateNode } from "./node-schema.js";
+import { DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, ollamaChatWithFallback } from "./ollama-runtime.js";
 
 const PRIMITIVES = [
   "browser_goto", "browser_extract", "browser_click", "browser_fill",
   "fs_read", "fs_write", "shell_run", "http_request", "mcp_call", "ai_infer"
 ];
 
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5-coder:1.5b";
-export const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434";
+export const OLLAMA_MODEL = DEFAULT_OLLAMA_MODEL;
+export const OLLAMA_BASE_URL = DEFAULT_OLLAMA_BASE_URL;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let planner = ollamaPlanner;
@@ -66,11 +67,11 @@ export async function generateNode(intent, context = {}) {
 }
 
 export async function ollamaPlanner(intent, context = {}, correction = null) {
-  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
+  const result = await ollamaChatWithFallback({
+    baseUrl: OLLAMA_BASE_URL,
+    preferredModel: OLLAMA_MODEL,
+    timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000),
+    body: {
       stream: false,
       format: "json",
       options: { temperature: 0, seed: 42 },
@@ -78,17 +79,10 @@ export async function ollamaPlanner(intent, context = {}, correction = null) {
         { role: "system", content: systemPrompt() },
         { role: "user", content: JSON.stringify({ intent, context, correction }) }
       ]
-    }),
-    signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS ?? 120000))
-  }).catch((error) => {
-    throw new Error(`Local model unavailable at ${OLLAMA_BASE_URL}: ${error.message}`);
+    }
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Local model request failed with HTTP ${response.status}: ${detail}`);
-  }
-  const payload = await response.json();
+  const payload = result.payload;
   const content = payload.message?.content;
   if (typeof content !== "string") throw new Error("Local model returned no JSON content");
   try {
